@@ -200,28 +200,193 @@ async def update_inventory_after_order(items: list, db: DatabaseManager):
         logger.error(f"Inventory update failed: {e}")
 
 
-@router.get("/active")
-async def get_active_order(current_user: UserinDB = Depends(get_current_user), db:DatabaseManager = Depends(get_database)):
-    """Get user's current active order (not delivered/cancelled)"""
-    try:
+# @router.get("/active")
+# async def get_active_order(current_user: UserinDB = Depends(get_current_user), db:DatabaseManager = Depends(get_database)):
+#     """Get user's current active order (not delivered/cancelled)"""
+#     try:
 
-        order = await db.find_many(
+#         order = await db.find_many(
+#             "orders",
+#             {
+#                 "user": current_user.id,
+#                 "order_status": {"$nin": ["delivered", "cancelled"]}
+#             },
+#             sort=[("created_at", -1)]
+#         )
+
+#         if not order:
+#             raise HTTPException(status_code=200, detail="No active order found")
+        
+#         # Serialize and return
+#         return fix_mongo_types(order)
+        
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error fetching active order: {e}")
+#         raise HTTPException(status_code=500, detail="Failed to fetch active order")
+
+
+# @router.get("/active")
+# async def get_active_order(
+#     current_user: UserinDB = Depends(current_active_user),
+#     db: DatabaseManager = Depends(get_database)
+# ):
+#     """Get user's current active order (excludes pending, delivered, cancelled)"""
+#     try:
+#         logger.info(f"Fetching active order for user: {current_user.email}")
+        
+#         # Find most recent order that's actively being processed
+#         # Exclude: pending (just placed), delivered (completed), cancelled
+#         orders = await db.find_many(
+#             "orders",
+#             {
+#                 "user": current_user.id,
+#                 "order_status": {
+#                     "$in": ["confirmed", "preparing", "out_for_delivery", "arrived"]
+#                 }
+#             },
+#             sort=[("created_at", -1)]
+#         )
+        
+#         if not orders:
+#             logger.info(f"No active order found for user {current_user.email}")
+#             raise HTTPException(
+#                 status_code=404, 
+#                 detail="No active order found"
+#             )
+#         enhanced_orders = []
+#         # Get delivery partner info if assigned
+#         for order in orders:
+#             if order['delivery_partner']:
+#                 try:
+#                     partner = await db.find_one(
+#                         "users",
+#                         {"id": order["delivery_partner"]}
+#                     )
+#                     if partner:
+#                         order["delivery_partner"] = {
+#                             "name": partner.get("name"),
+#                             "phone": partner.get("phone")
+#                             # "rating": partner.get("rating", 4.5),
+#                             # "deliveries": partner.get("total_deliveries", 0)
+#                         }
+#                 except Exception as partner_error:
+#                     logger.warning(f"Error fetching delivery partner: {partner_error}")
+            
+#             # Add status message based on current status
+#             if not order.get("status_message"):
+#                 status_messages = {
+#                     # "confirmed": "Your order has been confirmed and will be prepared soon.",
+#                     "preparing": "We are Preparing your order",
+#                     "ssigned": "Delivery Partner Assigned",
+#                     "out_for_delivery": "Your order is on its way to you.",
+#                     "arrived": "Delivery partner has arrived at your location!"
+#                 }
+#                 order["status_message"] = status_messages.get(
+#                     order["order_status"], 
+#                     "Your order is being processed."
+#                 )
+            
+#             # Serialize and return
+#             serialized_order = fix_mongo_types(order)
+#             logger.info(f"Returning active order {serialized_order.get('id')} with status: {order['order_status']}")
+#             enhanced_orders.append(serialized_order)
+
+#         return enhanced_orders
+        
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error fetching active order: {e}")
+#         import traceback
+#         logger.error(traceback.format_exc())
+#         raise HTTPException(
+#             status_code=500, 
+#             detail="Failed to fetch active order"
+#         )
+
+
+@router.get("/active")
+async def get_active_order(
+    current_user: UserinDB = Depends(current_active_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """
+    Get user's most recent active order (single order)
+    Returns only the most recent order that's actively being processed
+    """
+    try:
+        logger.info(f"Fetching active order for user: {current_user.email}")
+        
+        # Find most recent order that's actively being processed
+        # Exclude: pending (just placed), delivered (completed), cancelled
+        orders = await db.find_many(
             "orders",
             {
                 "user": current_user.id,
-                "order_status": {"$nin": ["delivered", "cancelled"]}
+                "order_status": {
+                    "$in": ["confirmed", "preparing", "assigned", "out_for_delivery", "arrived"]
+                }
             },
-            sort=[("created_at", -1)]
+            sort=[("created_at", -1)],
+            limit=1  # ✅ Only get the most recent one
         )
-
-        if not order:
-            raise HTTPException(status_code=200, detail="No active order found")
         
-        # Serialize and return
-        return fix_mongo_types(order)
+        if not orders or len(orders) == 0:
+            logger.info(f"No active order found for user {current_user.email}")
+            raise HTTPException(
+                status_code=404, 
+                detail="No active order found"
+            )
+        
+        # Get the first (most recent) order
+        order = orders[0]
+        
+        # Get delivery partner info if assigned
+        if order.get('delivery_partner'):
+            try:
+                partner = await db.find_one(
+                    "users",
+                    {"id": order["delivery_partner"]}
+                )
+                if partner:
+                    order["delivery_partner"] = {
+                        "name": partner.get("name"),
+                        "phone": partner.get("phone"),
+                        "rating": partner.get("rating", 4.5),
+                        "deliveries": partner.get("total_deliveries", 0)
+                    }
+            except Exception as partner_error:
+                logger.warning(f"Error fetching delivery partner: {partner_error}")
+        
+        # Add status message based on current status
+        if not order.get("status_message"):
+            status_messages = {
+                "confirmed": "Your order has been confirmed and will be prepared soon.",
+                "preparing": "We are preparing your order",
+                "assigned": "Delivery Partner Assigned",
+                "out_for_delivery": "Your order is on its way to you.",
+                "arrived": "Delivery partner has arrived at your location!"
+            }
+            order["status_message"] = status_messages.get(
+                order["order_status"], 
+                "Your order is being processed."
+            )
+        
+        # Serialize and return single order
+        serialized_order = fix_mongo_types(order)
+        logger.info(f"Returning active order {serialized_order.get('id')} with status: {order['order_status']}")
+        
+        return serialized_order  # ✅ Return single order dict, not a list
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error fetching active order: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch active order")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to fetch active order"
+        )

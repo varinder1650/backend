@@ -229,14 +229,38 @@ async def root():
         "status": "running"
     }
 
+# if __name__ == "__main__":
+#     import uvicorn
+    
+#     if ENV == 'Development':
+#         uvicorn.run(
+#             "main:app",
+#             host="0.0.0.0",
+#             port=8000,
+#             reload=True,
+#             log_level="info"
+#         )
+#     else:
+#         uvicorn.run(
+#             "main:app",
+#             host="0.0.0.0", 
+#             port=int(os.getenv('PORT', 8000)),
+#             reload=False,
+#             log_level="warning",
+#             workers=1  # Use 1 worker for now, increase based on server capacity
+#         )
+
 if __name__ == "__main__":
     import uvicorn
+    
+    # Render provides PORT environment variable
+    port = int(os.getenv('PORT', 8000))
     
     if ENV == 'Development':
         uvicorn.run(
             "main:app",
             host="0.0.0.0",
-            port=8000,
+            port=port,
             reload=True,
             log_level="info"
         )
@@ -244,8 +268,8 @@ if __name__ == "__main__":
         uvicorn.run(
             "main:app",
             host="0.0.0.0", 
-            port=int(os.getenv('PORT', 8000)),
+            port=port,
             reload=False,
             log_level="warning",
-            workers=1  # Use 1 worker for now, increase based on server capacity
+            workers=1
         )
