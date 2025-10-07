@@ -41,11 +41,6 @@ def serialize_product_for_mobile(product):
         # First, fix MongoDB types
         fixed_product = fix_mongo_types(product)
         
-        # Ensure _id field is properly set
-        if "_id" in product:
-            fixed_product["_id"] = str(product["_id"])
-            fixed_product["id"] = str(product["_id"])  # Add both for compatibility
-        
         # Process images for mobile app
         fixed_product["images"] = process_product_images(fixed_product)
         
@@ -54,19 +49,6 @@ def serialize_product_for_mobile(product):
         fixed_product.setdefault("status", "active")
         fixed_product.setdefault("keywords", [])
         fixed_product.setdefault("is_active", True)
-        
-        # Ensure category and brand are properly serialized
-        if "category" in fixed_product and isinstance(fixed_product["category"], dict):
-            cat = fixed_product["category"]
-            if "_id" in cat:
-                cat["_id"] = str(cat["_id"])
-                cat["id"] = str(cat["_id"])
-        
-        if "brand" in fixed_product and isinstance(fixed_product["brand"], dict):
-            brand = fixed_product["brand"]
-            if "_id" in brand:
-                brand["_id"] = str(brand["_id"])
-                brand["id"] = str(brand["_id"])
         
         return fixed_product
         
@@ -135,7 +117,7 @@ async def get_products(
                     "is_active": True
                 })
                 if cat:
-                    query["category"] = cat["_id"]
+                    query["category"] = cat["id"]
                 else:
                     empty_response = {
                         "products": [], 
@@ -165,7 +147,7 @@ async def get_products(
                     "is_active": True
                 })
                 if brand_doc:
-                    query["brand"] = brand_doc["_id"]
+                    query["brand"] = brand_doc["id"]
                 else:
                     empty_response = {
                         "products": [],
@@ -225,16 +207,16 @@ async def get_products(
             {
                 "$lookup": {
                     "from": "categories",
-                    "localField": "category",
-                    "foreignField": "_id",
+                    "localField": "category",  # This is the custom ID string like "CATSNACKS"
+                    "foreignField": "id",      # Match against category's custom id, not _id
                     "as": "category_data"
                 }
             },
             {
                 "$lookup": {
                     "from": "brands",
-                    "localField": "brand", 
-                    "foreignField": "_id",
+                    "localField": "brand",     # This is the custom ID string like "BRDLAYS"
+                    "foreignField": "id",      # Match against brand's custom id, not _id
                     "as": "brand_data"
                 }
             },
@@ -243,13 +225,13 @@ async def get_products(
                     "category": {
                         "$ifNull": [
                             {"$arrayElemAt": ["$category_data", 0]},
-                            {"name": "Uncategorized", "_id": None}
+                            {"name": "Uncategorized", "id": None, "_id": None}
                         ]
                     },
                     "brand": {
                         "$ifNull": [
                             {"$arrayElemAt": ["$brand_data", 0]},
-                            {"name": "No Brand", "_id": None}
+                            {"name": "No Brand", "id": None, "_id": None}
                         ]
                     }
                 }
@@ -290,15 +272,15 @@ async def get_products(
             try:
                 serialized_product = serialize_product_for_mobile(product)
                 
-                if serialized_product and serialized_product.get("_id"):
+                if serialized_product and serialized_product.get("id"):
                     processed_products.append(serialized_product)
                 else:
-                    logger.warning(f"Product {product.get('name')} missing _id after serialization")
+                    logger.warning(f"Product {product.get('name')} missing id after serialization")
                 
             except Exception as process_error:
                 logger.error(f"Error processing product: {process_error}")
                 continue
-        
+
         logger.info(f"Returning {len(processed_products)} products")
         
         # Build response
@@ -340,10 +322,11 @@ async def get_product(
     db: DatabaseManager = Depends(get_database)
 ):
     """Get a specific product by ID for mobile app"""
+    print(product_id)
     try:
         logger.info(f"Getting product by ID: {product_id}")
         
-        if not ObjectId.is_valid(product_id):
+        if not product_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid product ID format"
@@ -363,12 +346,12 @@ async def get_product(
         
         # Use aggregation to get product with populated fields
         pipeline = [
-            {"$match": {"_id": ObjectId(product_id), "is_active": True}},
+            {"$match": {"id": product_id, "is_active": True}},
             {
                 "$lookup": {
                     "from": "categories",
                     "localField": "category",
-                    "foreignField": "_id",
+                    "foreignField": "id",
                     "as": "category_data"
                 }
             },
@@ -376,7 +359,7 @@ async def get_product(
                 "$lookup": {
                     "from": "brands",
                     "localField": "brand",
-                    "foreignField": "_id",
+                    "foreignField": "id",
                     "as": "brand_data"
                 }
             },
@@ -385,13 +368,13 @@ async def get_product(
                     "category": {
                         "$ifNull": [
                             {"$arrayElemAt": ["$category_data", 0]},
-                            {"name": "Uncategorized", "_id": None}
+                            {"name": "Uncategorized", "id": None}
                         ]
                     },
                     "brand": {
                         "$ifNull": [
                             {"$arrayElemAt": ["$brand_data", 0]},
-                            {"name": "No Brand", "_id": None}
+                            {"name": "No Brand", "id": None}
                         ]
                     }
                 }
@@ -415,7 +398,7 @@ async def get_product(
         # Use the enhanced serialization function
         product = serialize_product_for_mobile(products[0])
         
-        if not product or not product.get("_id"):
+        if not product or not product.get("id"):
             logger.error(f"Product {product_id} missing _id after serialization")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -429,7 +412,7 @@ async def get_product(
         except Exception as cache_error:
             logger.warning(f"Cache write error: {cache_error}")
         
-        logger.info(f"Returning product {product.get('name')} with _id: {product.get('_id')}")
+        logger.info(f"Returning product {product.get('name')} with id: {product.get('id')}")
         return product
         
     except HTTPException:

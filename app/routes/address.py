@@ -1,10 +1,8 @@
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status
 import logging
 from typing import List
 from datetime import datetime
-
-# from pydantic import BaseModel
 from app.utils.auth import get_current_user
 from db.db_manager import DatabaseManager, get_database
 from schema.address import AddressCreate, AddressUpdate, AddressResponse,GeocodeRequest,ReverseGeocodeRequest,AddressSearchRequest
@@ -13,7 +11,6 @@ from typing import List
 import os
 from dotenv import load_dotenv
 import httpx
-# from app.utils.address import get_fallback_address,get_fallback_coordinates,get_fallback_predictions
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -35,7 +32,7 @@ async def create_address(
     try:
         # Check address limit
         user_addresses_count = await db.count_documents("user_addresses", {
-            "user_id": ObjectId(current_user.id)
+            "user_id": current_user.id
         })
         
         if user_addresses_count >= MAX_ADDRESSES_PER_USER:
@@ -46,7 +43,7 @@ async def create_address(
         
         # Check if user already has an address with this label
         existing_address = await db.find_one("user_addresses", {
-            "user_id": ObjectId(current_user.id),
+            "user_id": current_user.id,
             "label": address_data.label
         })
         
@@ -54,7 +51,7 @@ async def create_address(
         is_default = user_addresses_count == 0  # First address becomes default
         
         address_doc = address_data.dict()
-        address_doc["user_id"] = ObjectId(current_user.id)
+        address_doc["user_id"] = current_user.id
         address_doc["is_default"] = is_default
         address_doc["created_at"] = datetime.utcnow()
         address_doc["updated_at"] = datetime.utcnow()
@@ -86,7 +83,7 @@ async def get_user_addresses(
     try:
         addresses = await db.find_many(
             "user_addresses",
-            {"user_id": ObjectId(current_user.id)},
+            {"user_id": current_user.id},
             sort=[("is_default", -1), ("created_at", -1)]  # Default first, then by creation date
         )
         
@@ -117,7 +114,7 @@ async def set_default_address(
         # Check if address belongs to user
         existing_address = await db.find_one("user_addresses", {
             "_id": ObjectId(address_id),
-            "user_id": ObjectId(current_user.id)
+            "user_id": current_user.id
         })
         
         if not existing_address:
@@ -129,7 +126,7 @@ async def set_default_address(
         # Remove default from all user addresses
         await db.update_many(
             "user_addresses",
-            {"user_id": ObjectId(current_user.id)},
+            {"user_id": current_user.id},
             {"$set": {"is_default": False, "updated_at": datetime.utcnow()}}
         )
         
@@ -169,7 +166,7 @@ async def delete_address(
         # Check if address belongs to user
         existing_address = await db.find_one("user_addresses", {
             "_id": ObjectId(address_id),
-            "user_id": ObjectId(current_user.id)
+            "user_id": current_user.id
         })
         
         if not existing_address:
@@ -181,7 +178,7 @@ async def delete_address(
         # If deleting default address, make another address default
         if existing_address.get("is_default"):
             other_address = await db.find_one("user_addresses", {
-                "user_id": ObjectId(current_user.id),
+                "user_id": current_user.id,
                 "_id": {"$ne": ObjectId(address_id)}
             })
             

@@ -3,11 +3,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status, Background
 import logging
 from app.cache.redis_manager import get_redis
 from app.services.order_service import OrderService
-from app.utils.auth import current_active_user
+from app.utils.auth import current_active_user, get_current_user
 from db.db_manager import DatabaseManager, get_database
 from schema.order import OrderResponse, OrderResponseEnhanced
 from schema.user import UserinDB
 from app.utils.mongo import fix_mongo_types
+from app.utils.id_generator import get_id_generator
+
+id_generator = get_id_generator()
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -24,7 +27,8 @@ async def create_order(
         logger.info(f"Order data received: {order_data}")
         
         order_service = OrderService(db)
-        order_id = await order_service.create_order(order_data, current_user)
+        custom_id = await id_generator.generate_order_id(current_user.id)
+        order_id = await order_service.create_order(order_data, current_user,custom_id)
 
         logger.info(f"Order created successfully with ID: {order_id}")
         
@@ -82,12 +86,12 @@ async def get_my_orders(
         logger.info(f"❌ Order cache MISS for user {current_user.id}")
         
         skip = (page - 1) * limit
-        total_orders = await db.count_documents("orders", {"user": ObjectId(current_user.id)})
+        total_orders = await db.count_documents("orders", {"user": current_user.id})
         total_pages = (total_orders + limit - 1) // limit if total_orders > 0 else 0
         
         orders = await db.find_many(
             "orders", 
-            {"user": ObjectId(current_user.id)},
+            {"user": current_user.id},
             sort=[("created_at", -1)],
             skip=skip,
             limit=limit
@@ -102,14 +106,14 @@ async def get_my_orders(
                     for item in order["items"]:
                         try:
                             if isinstance(item.get('product'), str):
-                                product_id = ObjectId(item['product'])
+                                product_id = item['product']
                             elif isinstance(item.get('product'), ObjectId):
                                 product_id = item['product']
                                 item['product'] = str(item['product'])
                             else:
                                 continue
 
-                            product = await db.find_one("products", {"_id": product_id})
+                            product = await db.find_one("products", {"id": product_id})
                             if product:
                                 item["product_name"] = product["name"]
                                 item["product_image"] = product.get("images", [])
@@ -124,11 +128,7 @@ async def get_my_orders(
                 
                 # Fix MongoDB types
                 fixed_order = fix_mongo_types(order)
-                
-                # ✅ ADD: Ensure 'id' field exists for frontend
-                fixed_order['id'] = fixed_order.get('_id')
-                
-                # Try Pydantic validation
+
                 try:
                     validated_order = OrderResponseEnhanced(**fixed_order)
                     # ✅ Convert to dict with by_alias to ensure 'id' field
@@ -142,7 +142,7 @@ async def get_my_orders(
             except Exception as order_error:
                 logger.error(f"Error processing order: {order_error}")
                 continue
-        
+
         result = {
             "orders": enhanced_orders,
             "pagination": {
@@ -191,10 +191,37 @@ async def update_inventory_after_order(items: list, db: DatabaseManager):
                 # Update database stock
                 await db.update_one(
                     "products",
-                    {"_id": ObjectId(product_id)},
+                    {"id": product_id},
                     {"$inc": {"stock": -quantity}}
                 )
         
         logger.info(f"Inventory updated for {len(items)} items")
     except Exception as e:
         logger.error(f"Inventory update failed: {e}")
+
+
+@router.get("/active")
+async def get_active_order(current_user: UserinDB = Depends(get_current_user), db:DatabaseManager = Depends(get_database)):
+    """Get user's current active order (not delivered/cancelled)"""
+    try:
+
+        order = await db.find_many(
+            "orders",
+            {
+                "user": current_user.id,
+                "order_status": {"$nin": ["delivered", "cancelled"]}
+            },
+            sort=[("created_at", -1)]
+        )
+
+        if not order:
+            raise HTTPException(status_code=200, detail="No active order found")
+        
+        # Serialize and return
+        return fix_mongo_types(order)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching active order: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch active order")

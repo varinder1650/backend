@@ -26,8 +26,8 @@ class InventoryService:
             # Batch update Redis
             pipeline = []
             for product in products:
-                stock_key = f"stock:{product['_id']}"
-                reserved_key = f"reserved:{product['_id']}"
+                stock_key = f"stock:{product['id']}"
+                reserved_key = f"reserved:{product['id']}"
                 
                 pipeline.append(
                     self.redis.set(stock_key, product.get('stock', 0), 3600)

@@ -72,7 +72,7 @@ async def get_user_tickets(
     try:
         tickets = await db.find_many(
             "support_tickets",
-            {"user_id": ObjectId(current_user.id)},
+            {"user_id": current_user.id},
             sort=[("created_at", -1)]
         )
         
@@ -322,7 +322,7 @@ async def create_product_request(
     try:
         # Check if user already has a similar product request
         similar_request = await db.find_one("product_requests", {
-            "user_id": ObjectId(current_user.id),
+            "user_id": current_user.id,
             "product_name": {"$regex": request_data.product_name, "$options": "i"},
             "status": {"$in": [ProductRequestStatus.PENDING, ProductRequestStatus.UNDER_REVIEW]}
         })
@@ -334,7 +334,7 @@ async def create_product_request(
             )
         
         request_doc = request_data.dict()
-        request_doc["user_id"] = ObjectId(current_user.id)
+        request_doc["user_id"] = current_user.id
         request_doc["user_name"] = current_user.name
         request_doc["user_email"] = current_user.email
         request_doc["status"] = ProductRequestStatus.PENDING
@@ -370,7 +370,7 @@ async def get_user_tickets(
     try:
         tickets = await db.find_many(
             "support_tickets",
-            {"user_id": ObjectId(current_user.id)},
+            {"user_id": current_user.id},
             sort=[("created_at", -1)]
         )
         
@@ -414,13 +414,11 @@ async def get_user_product_requests(
 ):
     """Get all product requests for the current user"""
     try:
-        print("i ma here")
         requests = await db.find_many(
             "product_requests",
-            {"user_id": ObjectId(current_user.id)},
+            {"user_id": current_user.id},
             sort=[("created_at", -1)]
         )
-        print(requests)
         fixed_requests = [fix_mongo_types(request) for request in requests]
         return [ProductRequestResponse(**request) for request in fixed_requests]
         
@@ -456,7 +454,7 @@ async def vote_product_request(
         # Check if user already voted
         existing_vote = await db.find_one("product_request_votes", {
             "request_id": ObjectId(request_id),
-            "user_id": ObjectId(current_user.id)
+            "user_id": current_user.id
         })
         
         if existing_vote:
@@ -468,7 +466,7 @@ async def vote_product_request(
         # Add vote
         await db.insert_one("product_request_votes", {
             "request_id": ObjectId(request_id),
-            "user_id": ObjectId(current_user.id),
+            "user_id": current_user.id,
             "voted_at": datetime.utcnow()
         })
         

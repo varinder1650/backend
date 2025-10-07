@@ -18,16 +18,14 @@ async def get_categories(db: DatabaseManager = Depends(get_database)):
             {"is_active": True},  # Only get active categories
             sort=[("name", 1)]
         )
-        
-        print(categories)
-        # Fix ObjectId serialization and handle empty results
+
         processed_categories = []
         for category in categories:
             if category:
                 # Use the mongo fix utility
                 fixed_category = fix_mongo_types(category)
                 processed_categories.append(fixed_category)
-        
+ 
         return processed_categories
 
     except Exception as e:

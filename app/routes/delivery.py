@@ -28,7 +28,7 @@ async def get_available_orders_for_delivery(
         orders = await db.find_many(
             "orders",
             {
-                "order_status": {"$in" : ["confirmed","preparing","assigning","accepted"]}
+                "order_status": {"$in" : ["preparing","assigning","accepted"]}
             },
             sort=[("created_at", -1)]
         )
@@ -39,7 +39,7 @@ async def get_available_orders_for_delivery(
         for order in orders:
             try:
                 # Get user info for each order
-                user_info = await db.find_one("users", {"_id": order["user"]})
+                user_info = await db.find_one("users", {"id": order["user"]})
                 if user_info:
                     order["user_info"] = {
                         "name": user_info.get("name", "N/A"),
@@ -52,8 +52,8 @@ async def get_available_orders_for_delivery(
                     for item in order["items"]:
                         try:
                             if isinstance(item.get('product'), (str, ObjectId)):
-                                product_id = ObjectId(item['product']) if isinstance(item['product'], str) else item['product']
-                                product = await db.find_one("products", {"_id": product_id})
+                                product_id = item['product']
+                                product = await db.find_one("products", {"id": product_id})
                                 if product:
                                     item["product_name"] = product["name"]
                                     item["product_image"] = product.get("images", [])
@@ -67,7 +67,7 @@ async def get_available_orders_for_delivery(
                 enhanced_orders.append(fixed_order)
                 
             except Exception as order_error:
-                logger.error(f"Error processing order {order.get('_id')}: {order_error}")
+                logger.error(f"Error processing order {order.get('id')}: {order_error}")
                 continue
         
         logger.info(f"Returning {len(enhanced_orders)} available orders for delivery")
@@ -100,7 +100,7 @@ async def get_assigned_orders_for_delivery(
         orders = await db.find_many(
             "orders",
             {
-                "delivery_partner": ObjectId(current_user.id),
+                "delivery_partner": current_user.id,
                 "order_status": {"$in":["assigned","out_for_delivery"]}
             },
             sort=[("created_at", -1)]
@@ -110,7 +110,7 @@ async def get_assigned_orders_for_delivery(
         for order in orders:
             try:
                 # Get user info for each order
-                user_info = await db.find_one("users", {"_id": order["user"]})
+                user_info = await db.find_one("users", {"id": order["user"]})
                 if user_info:
                     order["user_info"] = {
                         "name": user_info.get("name", "N/A"),
@@ -123,8 +123,8 @@ async def get_assigned_orders_for_delivery(
                     for item in order["items"]:
                         try:
                             if isinstance(item.get('product'), (str, ObjectId)):
-                                product_id = ObjectId(item['product']) if isinstance(item['product'], str) else item['product']
-                                product = await db.find_one("products", {"_id": product_id})
+                                product_id = item['product']
+                                product = await db.find_one("products", {"id": product_id})
                                 if product:
                                     item["product_name"] = product["name"]
                                     item["product_image"] = product.get("images", [])
@@ -138,7 +138,7 @@ async def get_assigned_orders_for_delivery(
                 enhanced_orders.append(fixed_order)
                 
             except Exception as order_error:
-                logger.error(f"Error processing order {order.get('_id')}: {order_error}")
+                logger.error(f"Error processing order {order.get('id')}: {order_error}")
                 continue
         
         logger.info(f"Returning {len(enhanced_orders)} assigned orders for delivery partner {current_user.id}")
@@ -171,7 +171,7 @@ async def get_delivered_orders_for_delivery(
         orders = await db.find_many(
             "orders",
             {
-                "delivery_partner": ObjectId(current_user.id),
+                "delivery_partner": current_user.id,
                 "order_status": "delivered"
             },
             sort=[("updated_at", -1)]  # Sort by delivery date
@@ -181,7 +181,7 @@ async def get_delivered_orders_for_delivery(
         for order in orders:
             try:
                 # Get user info for each order
-                user_info = await db.find_one("users", {"_id": order["user"]})
+                user_info = await db.find_one("users", {"id": order["user"]})
                 if user_info:
                     order["user_info"] = {
                         "name": user_info.get("name", "N/A"),
@@ -194,8 +194,8 @@ async def get_delivered_orders_for_delivery(
                     for item in order["items"]:
                         try:
                             if isinstance(item.get('product'), (str, ObjectId)):
-                                product_id = ObjectId(item['product']) if isinstance(item['product'], str) else item['product']
-                                product = await db.find_one("products", {"_id": product_id})
+                                product_id = item['product']
+                                product = await db.find_one("products", {"id": product_id})
                                 if product:
                                     item["product_name"] = product["name"]
                                     item["product_image"] = product.get("images", [])
@@ -209,7 +209,7 @@ async def get_delivered_orders_for_delivery(
                 enhanced_orders.append(fixed_order)
                 
             except Exception as order_error:
-                logger.error(f"Error processing order {order.get('_id')}: {order_error}")
+                logger.error(f"Error processing order {order.get('id')}: {order_error}")
                 continue
         
         logger.info(f"Returning {len(enhanced_orders)} delivered orders for delivery partner {current_user.id}")
@@ -241,7 +241,7 @@ async def accept_delivery_order(
         
         # Validate order_id
         try:
-            order_object_id = ObjectId(order_id)
+            order_object_id = order_id
         except Exception:
             logger.error("Invalid order ID")
             raise HTTPException(
@@ -250,7 +250,7 @@ async def accept_delivery_order(
             )
         
         # Check if order exists and is available for assignment
-        order = await db.find_one("orders", {"_id": order_object_id})
+        order = await db.find_one("orders", {"id": order_object_id})
         if not order:
             logger.error("Order not found")
             raise HTTPException(
@@ -267,7 +267,7 @@ async def accept_delivery_order(
             )
         
         # Check if order status allows assignment
-        if order.get("order_status") not in ["confirmed","preparing","assigning","accepted"]:
+        if order.get("order_status") not in ["preparing","assigning","accepted"]:
             logger.error("can't be assigned")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -275,12 +275,12 @@ async def accept_delivery_order(
             )
 
         accepted_partners = order.get("accepted_partners",[])
-        accepted_partners.append(ObjectId(current_user.id))
+        accepted_partners.append(current_user.id)
         
         # Assign the order to the delivery partner
         await db.update_one(
             "orders",
-            {"_id": order_object_id},
+            {"id": order_object_id},
             {
                 "$set": {
                     "accepted_partners": accepted_partners,
@@ -319,7 +319,7 @@ async def mark_order_as_delivered(
             )
         # Validate order_id
         try:
-            order_object_id = ObjectId(order_id)
+            order_object_id = order_id
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -327,8 +327,8 @@ async def mark_order_as_delivered(
             )
         # Check if order exists and is assigned to this delivery partner
         order = await db.find_one("orders", {
-            "_id": order_object_id,
-            "delivery_partner": ObjectId(current_user.id)
+            "id": order_object_id,
+            "delivery_partner": current_user.id
         })
       
         if not order:
@@ -347,7 +347,7 @@ async def mark_order_as_delivered(
         # Mark the order as delivered
         await db.update_one(
             "orders",
-            {"_id": order_object_id},
+            {"id": order_object_id},
             {
                 "$set": {
                     "order_status": "delivered",
