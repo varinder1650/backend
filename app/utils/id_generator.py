@@ -97,33 +97,6 @@ class IDGenerator:
         
         return order_id
     
-    async def generate_product_id(self, category_name: str = None) -> str:
-        """
-        Generate product ID: PRD-ELECT-001234
-        
-        Format: PREFIX-CATEGORY-SEQUENCE
-        Example: PRD-ELECT-001234
-        """
-        prefix = self.PREFIXES['product']
-        
-        # Get category code
-        if category_name:
-            category_code = self.CATEGORY_CODES.get(
-                category_name.lower(), 
-                category_name[:4].upper()
-            )
-        else:
-            category_code = 'MISC'
-        
-        # Get sequence number
-        date_part = self._generate_date_component()
-        sequence = await self._get_next_sequence('product', date_part)
-        sequence_str = str(sequence).zfill(6)
-        
-        product_id = f"{prefix}{category_code}{sequence_str}"
-        
-        return product_id
-    
     async def generate_user_id(self, email: str = None, role:str = 'customer') -> str:
         """
         Generate user ID: USR-20250102-XYZ789
@@ -155,134 +128,83 @@ class IDGenerator:
         
         return user_id
     
-    async def generate_delivery_partner_id(self, name: str = None) -> str:
-        """
-        Generate delivery partner ID: DLP-20250102-PQR456
+    # async def generate_delivery_partner_id(self, name: str = None) -> str:
+    #     """
+    #     Generate delivery partner ID: DLP-20250102-PQR456
         
-        Format: PREFIX-DATE-RANDOM
-        Example: DLP-20250102-P7Q9R2
-        """
-        prefix = self.PREFIXES['delivery_partner']
-        date_part = self._generate_date_component()
-        random_part = self._generate_random_suffix(6)
+    #     Format: PREFIX-DATE-RANDOM
+    #     Example: DLP-20250102-P7Q9R2
+    #     """
+    #     prefix = self.PREFIXES['delivery_partner']
+    #     date_part = self._generate_date_component()
+    #     random_part = self._generate_random_suffix(6)
         
-        partner_id = f"{prefix}{date_part}{random_part}"
+    #     partner_id = f"{prefix}{date_part}{random_part}"
         
-        # Ensure uniqueness
-        retry_count = 0
-        while await self._id_exists('users', partner_id) and retry_count < 5:
-            random_part = self._generate_random_suffix(6)
-            partner_id = f"{prefix}-{date_part}-{random_part}"
-            retry_count += 1
+    #     # Ensure uniqueness
+    #     retry_count = 0
+    #     while await self._id_exists('users', partner_id) and retry_count < 5:
+    #         random_part = self._generate_random_suffix(6)
+    #         partner_id = f"{prefix}-{date_part}-{random_part}"
+    #         retry_count += 1
         
-        return partner_id
+    #     return partner_id
     
-    async def generate_support_ticket_id(self) -> str:
-        """
-        Generate support ticket ID: TKT-20250102-0001
+    # async def generate_support_ticket_id(self) -> str:
+    #     """
+    #     Generate support ticket ID: TKT-20250102-0001
         
-        Format: PREFIX-DATE-SEQUENCE
-        Example: TKT-20250102-0001
-        """
-        prefix = self.PREFIXES['support_ticket']
-        date_part = self._generate_date_component()
+    #     Format: PREFIX-DATE-SEQUENCE
+    #     Example: TKT-20250102-0001
+    #     """
+    #     prefix = self.PREFIXES['support_ticket']
+    #     date_part = self._generate_date_component()
         
-        # Get daily sequence
-        sequence = await self._get_next_sequence('support_ticket', date_part)
-        sequence_str = str(sequence).zfill(4)
+    #     # Get daily sequence
+    #     sequence = await self._get_next_sequence('support_ticket', date_part)
+    #     sequence_str = str(sequence).zfill(4)
         
-        ticket_id = f"{prefix}{date_part}{sequence_str}"
+    #     ticket_id = f"{prefix}{date_part}{sequence_str}"
         
-        return ticket_id
+    #     return ticket_id
     
-    async def generate_payment_id(self, order_id: str = None) -> str:
-        """
-        Generate payment ID: PAY-ORD20250102ABC123-T001
+    # async def generate_payment_id(self, order_id: str = None) -> str:
+    #     """
+    #     Generate payment ID: PAY-ORD20250102ABC123-T001
         
-        Format: PREFIX-ORDERREF-TRANSACTION
-        Example: PAY-ORD20250102ABC123-T001
-        """
-        prefix = self.PREFIXES['payment']
+    #     Format: PREFIX-ORDERREF-TRANSACTION
+    #     Example: PAY-ORD20250102ABC123-T001
+    #     """
+    #     prefix = self.PREFIXES['payment']
         
-        if order_id:
-            # Remove hyphens from order ID for compactness
-            order_ref = order_id.replace('-', '')
-        else:
-            order_ref = self._generate_date_component() + self._generate_random_suffix(6)
+    #     if order_id:
+    #         # Remove hyphens from order ID for compactness
+    #         order_ref = order_id.replace('-', '')
+    #     else:
+    #         order_ref = self._generate_date_component() + self._generate_random_suffix(6)
         
-        # Get transaction sequence
-        sequence = await self._get_next_sequence('payment', order_ref)
-        transaction_num = f"T{str(sequence).zfill(3)}"
+    #     # Get transaction sequence
+    #     sequence = await self._get_next_sequence('payment', order_ref)
+    #     transaction_num = f"T{str(sequence).zfill(3)}"
         
-        payment_id = f"{prefix}{order_ref}{transaction_num}"
+    #     payment_id = f"{prefix}{order_ref}{transaction_num}"
         
-        return payment_id
+    #     return payment_id
     
-    async def generate_coupon_code(self, prefix: str = None, length: int = 8) -> str:
-        """
-        Generate coupon code: WINTER2025-ABC123XY
-        
-        Format: CUSTOMPREFIX-RANDOM or CPN-RANDOM
-        Example: NEWYEAR25-A7C9X2Y4
-        """
-        if prefix:
-            code_prefix = prefix.upper()
-        else:
-            code_prefix = self.PREFIXES['coupon']
-        
-        random_part = self._generate_random_suffix(length)
-        coupon_code = f"{code_prefix}{random_part}"
-        
-        # Ensure uniqueness
-        retry_count = 0
-        while await self._id_exists('discount_coupons', coupon_code) and retry_count < 5:
-            random_part = self._generate_random_suffix(length)
-            coupon_code = f"{code_prefix}{random_part}"
-            retry_count += 1
-        
-        return coupon_code
     
-    async def generate_invoice_id(self, order_id: str) -> str:
-        """
-        Generate invoice ID: INV-ORD20250102ABC123
+    # async def generate_invoice_id(self, order_id: str) -> str:
+    #     """
+    #     Generate invoice ID: INV-ORD20250102ABC123
         
-        Format: PREFIX-ORDERREF
-        Example: INV-ORD20250102ABC123
-        """
-        prefix = self.PREFIXES['invoice']
-        order_ref = order_id.replace('-', '')
+    #     Format: PREFIX-ORDERREF
+    #     Example: INV-ORD20250102ABC123
+    #     """
+    #     prefix = self.PREFIXES['invoice']
+    #     order_ref = order_id.replace('-', '')
         
-        invoice_id = f"{prefix}{order_ref}"
+    #     invoice_id = f"{prefix}{order_ref}"
         
-        return invoice_id
-    
-    async def generate_category_id(self, category_name: str) -> str:
-        """
-        Generate category ID: CAT-ELECTRONICS
-        
-        Format: PREFIX-NAME
-        Example: CAT-ELECTRONICS
-        """
-        prefix = self.PREFIXES['category']
-        name_part = category_name.upper().replace(' ', '')[:12]
-        
-        category_id = f"{prefix}{name_part}"
-        
-        return category_id
-    
-    async def generate_brand_id(self, brand_name: str) -> str:
-        """
-        Generate brand ID: BRD-SAMSUNG
-        
-        Format: PREFIX-NAME
-        Example: BRD-SAMSUNG
-        """
-        prefix = self.PREFIXES['brand']
-        name_part = brand_name.upper().replace(' ', '')[:10]
-        
-        brand_id = f"{prefix}{name_part}"
-        
-        return brand_id
+    #     return invoice_id
     
     async def _id_exists(self, collection: str, id_value: str) -> bool:
         """Check if ID already exists in database"""
@@ -377,147 +299,3 @@ id_generator = IDGenerator()
 
 def get_id_generator() -> IDGenerator:
     return id_generator
-
-
-# Migration helper functions
-async def migrate_existing_ids(collection_name: str, entity_type: str):
-    """
-    Helper function to migrate existing ObjectId-based documents to custom IDs
-    
-    Usage:
-        await migrate_existing_ids('orders', 'order')
-        await migrate_existing_ids('products', 'product')
-    """
-    from db.db_manager import get_database
-    
-    db = get_database()
-    generator = get_id_generator()
-    
-    logger.info(f"Starting ID migration for {collection_name}...")
-    
-    # Get all documents
-    documents = await db.find_many(collection_name, {})
-    
-    migrated_count = 0
-    error_count = 0
-    
-    for doc in documents:
-        try:
-            # Skip if already has custom_id
-            if 'custom_id' in doc:
-                continue
-            
-            # Generate new custom ID
-            if entity_type == 'order':
-                custom_id = await generator.generate_order_id()
-            elif entity_type == 'product':
-                category_name = doc.get('category', {}).get('name', 'misc')
-                custom_id = await generator.generate_product_id(category_name)
-            elif entity_type == 'user':
-                custom_id = await generator.generate_user_id(doc.get('email'))
-            elif entity_type == 'support_ticket':
-                custom_id = await generator.generate_support_ticket_id()
-            else:
-                logger.warning(f"Unknown entity type: {entity_type}")
-                continue
-            
-            # Update document with custom_id
-            await db.update_one(
-                collection_name,
-                {"_id": doc["_id"]},
-                {
-                    "$set": {
-                        "custom_id": custom_id,
-                        "legacy_id": str(doc["_id"]),
-                        "migrated_at": datetime.utcnow()
-                    }
-                }
-            )
-            
-            migrated_count += 1
-            
-            if migrated_count % 100 == 0:
-                logger.info(f"Migrated {migrated_count} documents...")
-        
-        except Exception as e:
-            logger.error(f"Error migrating document {doc.get('_id')}: {e}")
-            error_count += 1
-    
-    logger.info(f"Migration complete: {migrated_count} migrated, {error_count} errors")
-    
-    return {
-        "collection": collection_name,
-        "migrated": migrated_count,
-        "errors": error_count
-    }
-
-
-# Example usage in your routes
-"""
-# In your auth.py for user registration:
-
-from app.utils.id_generator import get_id_generator
-
-@router.post("/register")
-async def register_user(user_data: UserCreate, db: DatabaseManager = Depends(get_database)):
-    try:
-        id_generator = get_id_generator()
-        
-        # Generate custom user ID
-        custom_user_id = await id_generator.generate_user_id(user_data.email)
-        
-        user_doc = {
-            "custom_id": custom_user_id,  # Primary custom ID
-            "name": user_data.name,
-            "email": user_data.email,
-            # ... rest of user data
-        }
-        
-        # Still use MongoDB ObjectId as _id for database operations
-        user_id = await db.insert_one("users", user_doc)
-        
-        # Use custom_id for all API responses and references
-        return {
-            "user_id": custom_user_id,  # Return custom ID to client
-            "message": "User registered successfully"
-        }
-        
-    except Exception as e:
-        logger.error(f"Registration error: {e}")
-        raise
-
-
-# In your orders.py:
-
-@router.post("/")
-async def create_order(order_data: dict, current_user: UserinDB = Depends(current_active_user)):
-    try:
-        id_generator = get_id_generator()
-        
-        # Generate custom order ID
-        custom_order_id = await id_generator.generate_order_id(current_user.id)
-        
-        order_doc = {
-            "custom_id": custom_order_id,
-            "user_custom_id": current_user.custom_id,  # Reference by custom ID
-            "items": order_data['items'],
-            # ... rest of order data
-        }
-        
-        await db.insert_one("orders", order_doc)
-        
-        # Generate related IDs
-        payment_id = await id_generator.generate_payment_id(custom_order_id)
-        invoice_id = await id_generator.generate_invoice_id(custom_order_id)
-        
-        return {
-            "order_id": custom_order_id,
-            "payment_id": payment_id,
-            "invoice_id": invoice_id,
-            "message": "Order created successfully"
-        }
-        
-    except Exception as e:
-        logger.error(f"Order creation error: {e}")
-        raise
-"""

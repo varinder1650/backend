@@ -55,7 +55,7 @@ class OrderBase(BaseModel):
     app_fee: float = Field(default=0, ge=0)
     total_amount: float = Field(..., gt=0)
     payment_status: str = "pending"
-    order_status: str = "pending"
+    order_status: str = "preparing"
     status_change_history: List[StatusChange] = []
     delivery_partner: Optional[str] = None
 
@@ -97,7 +97,7 @@ class OrderResponse(BaseModel):
 
 
 class OrderResponseEnhanced(BaseModel):
-    id: str = Field(None, alias="_id")
+    id: str
     user: str
     user_info: Optional[UserInfo] = None
     items: List[OrderItemEnhancedResponse]  # Now includes product_name

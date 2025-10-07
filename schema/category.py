@@ -1,12 +1,11 @@
-from typing import Optional,List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 class Category(BaseModel):
     name:str
     image: str = None
 
 class CategoryResponse(Category):
-    id: str = Field(..., alias="_id")
+    id: str
     
     class Config:
         populate_by_name = True

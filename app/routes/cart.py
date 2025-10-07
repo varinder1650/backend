@@ -1,4 +1,3 @@
-from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 import logging
 from app.utils.auth import current_active_user
@@ -44,10 +43,11 @@ async def add_to_cart(
 ):
     product_id = req.productId
     quantity = req.quantity
+    # print(product_id)
     try:
         logger.info(f"Adding product {product_id} to cart for user {current_user.email}")
         
-        if not ObjectId.is_valid(product_id):
+        if not product_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid product ID"
@@ -70,7 +70,7 @@ async def add_to_cart(
             logger.warning(f"Inventory service error, falling back to DB: {stock_error}")
             # Fallback to database stock check
             product = await db.find_one("products", {
-                "_id": ObjectId(product_id),
+                "id": product_id,
                 "is_active": True
             })
             
@@ -87,16 +87,16 @@ async def add_to_cart(
                 )
         
         # Find or create cart
-        cart = await db.find_one("carts", {"user": ObjectId(current_user.id)})
+        cart = await db.find_one("carts", {"user": current_user.id})
 
         if not cart:
             # Create new cart
             item_id = str(uuid.uuid4())
             cart_data = {
-                "user": ObjectId(current_user.id),
+                "user": current_user.id,
                 "items": [{
                     "_id": item_id,
-                    "product": ObjectId(product_id), 
+                    "product": product_id, 
                     "quantity": quantity,
                     "added_at": datetime.utcnow()
                 }],
@@ -109,7 +109,7 @@ async def add_to_cart(
             # Update existing cart
             existing_item = None
             for item in cart["items"]:
-                if item["product"] == ObjectId(product_id):
+                if item["product"] == product_id:
                     existing_item = item
                     break
                     
@@ -122,7 +122,7 @@ async def add_to_cart(
                 item_id = str(uuid.uuid4())
                 cart["items"].append({
                     "_id": item_id,
-                    "product": ObjectId(product_id), 
+                    "product": product_id, 
                     "quantity": quantity,
                     "added_at": datetime.utcnow()
                 })
@@ -206,8 +206,8 @@ async def get_cart(
             logger.warning(f"Cache read error: {cache_error}")
         
         # Fallback to database
-        cart = await db.find_one("carts", {"user": ObjectId(current_user.id)})
-
+        cart = await db.find_one("carts", {"user": current_user.id})
+        print(cart)
         if not cart:
             empty_cart = {"items": []}
             try:
@@ -222,12 +222,12 @@ async def get_cart(
             try:
                 # Get product details with populated references
                 pipeline = [
-                    {"$match": {"_id": item["product"], "is_active": True}},
+                    {"$match": {"id": item["product"], "is_active": True}},
                     {
                         "$lookup": {
                             "from": "categories",
                             "localField": "category",
-                            "foreignField": "_id",
+                            "foreignField": "id",
                             "as": "category_data"
                         }
                     },
@@ -235,7 +235,7 @@ async def get_cart(
                         "$lookup": {
                             "from": "brands",
                             "localField": "brand",
-                            "foreignField": "_id",
+                            "foreignField": "id",
                             "as": "brand_data"
                         }
                     },
@@ -244,13 +244,13 @@ async def get_cart(
                             "category": {
                                 "$ifNull": [
                                     {"$arrayElemAt": ["$category_data", 0]},
-                                    {"name": "Uncategorized", "_id": None}
+                                    {"name": "Uncategorized", "id": None}
                                 ]
                             },
                             "brand": {
                                 "$ifNull": [
                                     {"$arrayElemAt": ["$brand_data", 0]},
-                                    {"name": "No Brand", "_id": None}
+                                    {"name": "No Brand", "id": None}
                                 ]
                             }
                         }
@@ -264,7 +264,7 @@ async def get_cart(
                 ]
                 
                 products_result = await db.aggregate("products", pipeline)
-                
+                # print(products_result)
                 if products_result:
                     product = products_result[0]
                     product_fixed = fix_mongo_types(product)
@@ -282,7 +282,7 @@ async def get_cart(
                         available_stock = product.get('stock', 0)
                     
                     # Ensure cart item has proper ID
-                    item_id = item.get("_id") or str(uuid.uuid4())
+                    item_id = item.get("_id")
                     
                     items_with_products.append({
                         "_id": item_id,
@@ -329,6 +329,7 @@ async def update_cart_item(
 ):
     item_id = req.itemId
     quantity = req.quantity
+    # print(item_id,quantity)
     try:
         logger.info(f"Updating cart item {item_id} to quantity {quantity} for user {current_user.email}")
         
@@ -341,7 +342,7 @@ async def update_cart_item(
         redis = get_redis()
         inventory_service = get_inventory_service()
             
-        cart = await db.find_one("carts", {"user": ObjectId(current_user.id)})
+        cart = await db.find_one("carts", {"user": current_user.id})
         if not cart:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -365,7 +366,7 @@ async def update_cart_item(
                 except Exception as stock_error:
                     logger.warning(f"Inventory service error: {stock_error}")
                     # Fallback to DB
-                    product = await db.find_one("products", {"_id": item["product"], "is_active": True})
+                    product = await db.find_one("products", {"id": item["product"], "is_active": True})
                     if not product:
                         raise HTTPException(
                             status_code=status.HTTP_404_NOT_FOUND,
@@ -429,7 +430,7 @@ async def remove_from_cart(
     try:
         logger.info(f"Removing cart item {item_id} for user {current_user.email}")
         
-        cart = await db.find_one("carts", {"user": ObjectId(current_user.id)})
+        cart = await db.find_one("carts", {"user": current_user.id})
         if not cart:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -487,7 +488,7 @@ async def clear_cart(
     try:
         logger.info(f"Clearing cart for user {current_user.email}")
         
-        cart = await db.find_one("carts", {"user": ObjectId(current_user.id)})
+        cart = await db.find_one("carts", {"user": current_user.id})
         if not cart:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

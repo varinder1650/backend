@@ -1,0 +1,39 @@
+services:
+  # FastAPI Backend
+  - type: web
+    name: smartbag-api
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: ENVIRONMENT
+        value: Production
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: MONGO_URI
+        sync: false
+      - key: DB_NAME
+        value: smartbag
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 1440
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: 30
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: smartbag-redis
+          property: connectionString
+    healthCheckPath: /health
+    
+  # Redis Instance
+  - type: redis
+    name: smartbag-redis
+    ipAllowList: []
+    plan: free
+    maxmemoryPolicy: allkeys-lru

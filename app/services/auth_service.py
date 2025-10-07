@@ -161,7 +161,7 @@ class AuthService:
             # Check if phone already exists for another user
             existing_phone = await self.db.find_one("users", {
                 "phone": phone,
-                "_id": {"$ne": ObjectId(user_id)}
+                "id": {"$ne": user_id}
             })
             
             if existing_phone:
@@ -174,12 +174,12 @@ class AuthService:
             # Update user's phone
             await self.db.update_one(
                 "users",
-                {"_id": ObjectId(user_id)},
+                {"id": user_id},
                 {"$set": {"phone": phone, "phone_verified": False}}
             )
             
             # Get updated user
-            updated_user = await self.db.find_one("users", {"_id": ObjectId(user_id)})
+            updated_user = await self.db.find_one("users", {"id": user_id})
             logger.info(f"Phone updated successfully for user {user_id}")
             return updated_user
             
