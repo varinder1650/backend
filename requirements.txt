@@ -2,11 +2,9 @@ fastapi
 uvicorn[standard]
 python-multipart
 python-jose[cryptography]
-# passlib[bcrypt]
-# motor
 pydantic-settings
+pymongo==4.9.1
 motor==3.6.0
-pymongo==4.10.1
 pydantic[email]
 slowapi
 httpx
@@ -20,4 +18,5 @@ celery>=5.3.0
 flower>=2.0.0
 prometheus-client>=0.19.0
 structlog
-bcrypt==4.0.1 passlib==1.7.4
+bcrypt==4.0.1
+passlib==1.7.4

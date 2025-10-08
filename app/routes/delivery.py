@@ -28,7 +28,7 @@ async def get_available_orders_for_delivery(
         orders = await db.find_many(
             "orders",
             {
-                "order_status": {"$in" : ["preparing","assigning","accepted"]}
+                "order_status": {"$in" : ["preparing","assigning"]}
             },
             sort=[("created_at", -1)]
         )
@@ -46,7 +46,7 @@ async def get_available_orders_for_delivery(
                         "phone": user_info.get("phone", "N/A"),
                         "email": user_info.get("email", "N/A")
                     }
-                
+                    
                 # Process items to add product details
                 if "items" in order and isinstance(order["items"], list):
                     for item in order["items"]:
@@ -65,7 +65,7 @@ async def get_available_orders_for_delivery(
                 
                 fixed_order = fix_mongo_types(order)
                 enhanced_orders.append(fixed_order)
-                
+                    
             except Exception as order_error:
                 logger.error(f"Error processing order {order.get('id')}: {order_error}")
                 continue
@@ -267,7 +267,7 @@ async def accept_delivery_order(
             )
         
         # Check if order status allows assignment
-        if order.get("order_status") not in ["preparing","assigning","accepted"]:
+        if order.get("order_status") not in ["preparing","assigning"]:
             logger.error("can't be assigned")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -275,19 +275,39 @@ async def accept_delivery_order(
             )
 
         accepted_partners = order.get("accepted_partners",[])
+        if current_user.id in accepted_partners:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You have already accepted this order"
+            )
         accepted_partners.append(current_user.id)
-        
-        # Assign the order to the delivery partner
+        current_time = datetime.utcnow()
+        status_history_entry = {
+            "status": "assigning",
+            "changed_at": current_time,
+            "changed_by": current_user.name,
+            "partner_id": current_user.id,
+            "message": f"{current_user.name} accepted the order"
+        }
+
+        update_data = {
+            "$set": {
+                "accepted_partners": accepted_partners,
+                "order_status": "assigning",
+                "accepted_at": current_time,
+                "accepted_at": current_time,  # Timestamp for this specific status
+                "updated_at": current_time,
+                "status_message": f"Order accepted by {current_user.name}"
+            },
+            "$push": {
+                "status_change_history": status_history_entry
+            }
+        }
+
         await db.update_one(
             "orders",
-            {"id": order_object_id},
-            {
-                "$set": {
-                    "accepted_partners": accepted_partners,
-                    "order_status": "accepted",
-                    "accepted_at": datetime.utcnow()
-                }
-            }
+            {"id": order_id},
+            update_data
         )
         
         logger.info(f"Order {order_id} assigned to delivery partner {current_user.id}")
@@ -344,14 +364,27 @@ async def mark_order_as_delivered(
                 detail=f"Order with status '{order.get('order_status')}' cannot be marked as delivered"
             )
         
-        # Mark the order as delivered
+        current_time = datetime.utcnow()
+        
+        # Mark the order as delivered with proper timeline
         await db.update_one(
             "orders",
-            {"id": order_object_id},
+            {"id": order_id},
             {
                 "$set": {
                     "order_status": "delivered",
-                    "delivered_at": datetime.utcnow()
+                    "delivered_at": current_time,
+                    "payment_status": "completed" if order.get("payment_method") == "cod" else order.get("payment_status"),
+                    "updated_at": current_time,
+                    "status_message": "Order delivered successfully!"
+                },
+                "$push": {
+                    "status_change_history": {
+                        "status": "delivered",
+                        "changed_at": current_time,
+                        "changed_by": current_user.name,
+                        "message": f"Order delivered by {current_user.name}"
+                    }
                 }
             }
         )
