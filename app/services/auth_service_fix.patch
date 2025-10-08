@@ -1,0 +1,14 @@
+# Add this check in authenticate_user method after finding the user
+
+if not auth:
+    logger.warning(f"User {username} not found")
+    return None
+
+# ✅ ADD THIS CHECK
+if not auth.get("is_active", True):
+    logger.warning(f"User {username} is inactive")
+    return None
+    
+if not verify_password(password, auth['hashed_password']):
+    logger.warning(f"Invalid password for user {username}")
+    return None

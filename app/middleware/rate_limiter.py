@@ -1,8 +1,3 @@
-"""
-Rate Limiting Middleware for SmartBag API
-Protects against brute force attacks and API abuse
-"""
-
 import time
 import logging
 from datetime import datetime, timedelta
@@ -57,6 +52,15 @@ class RateLimiter:
         Check if client has exceeded rate limit
         Returns: (is_limited, rate_info)
         """
+        import os
+        if os.getenv('ENVIRONMENT') == 'Testing':
+            return False, {
+                "limit": max_requests,
+                "remaining": max_requests,
+                "reset": int(time.time() + window_seconds),
+                "retry_after": 0
+            }
+        
         self._cleanup_old_entries()
         
         current_time = time.time()
@@ -205,6 +209,11 @@ class GlobalRateLimitMiddleware:
     
     async def __call__(self, scope, receive, send):
         """ASGI3 middleware interface"""
+        import os
+        if os.getenv('ENVIRONMENT') == 'Testing':
+            await self.app(scope, receive, send)
+            return
+        
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return

@@ -29,6 +29,10 @@ class RedisManager:
     async def get(self, key: str) -> Optional[Any]:
         """Get value from Redis with automatic deserialization"""
         try:
+            if self.redis is None:
+                logger.warning("Redis not initialized, skipping cache")
+                return None
+            
             value = await self.redis.get(key)
             if value is None:
                 return None
@@ -46,6 +50,8 @@ class RedisManager:
         """Set value in Redis with TTL"""
         try:
             # Try JSON first for simple objects, fallback to pickle
+            if self.redis is None:
+                return False
             try:
                 serialized_value = json.dumps(value, default=str)
             except (TypeError, ValueError):
@@ -69,6 +75,10 @@ class RedisManager:
     async def get_many(self, keys: List[str]) -> Dict[str, Any]:
         """Get multiple keys from Redis"""
         try:
+            if self.redis is None:
+                logger.warning("Redis not initialized, skipping cache")
+                return {}
+            
             if not keys:
                 return {}
             

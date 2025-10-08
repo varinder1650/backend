@@ -1,5 +1,5 @@
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field,ConfigDict
 from datetime import datetime
 from enum import Enum
 
@@ -34,6 +34,8 @@ class SupportTicketCreate(BaseModel):
     order_id: Optional[str] = None
 
 class SupportTicketResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str = Field(..., alias="_id")
     user_id: str
     user_name: str
@@ -47,8 +49,8 @@ class SupportTicketResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        allow_population_by_field_name = True
+    # class Config:
+    #     allow_population_by_field_name = True
 
 class ProductRequestCreate(BaseModel):
     product_name: str = Field(..., min_length=2, max_length=200)
@@ -59,6 +61,8 @@ class ProductRequestCreate(BaseModel):
     # why_needed: str = Field(..., min_length=10, max_length=500)
 
 class ProductRequestResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str = Field(..., alias="_id")
     user_id: str
     user_name: str
@@ -75,8 +79,8 @@ class ProductRequestResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        allow_population_by_field_name = True
+    # class Config:
+    #     allow_population_by_field_name = True
 
 class TicketMessageCreate(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)

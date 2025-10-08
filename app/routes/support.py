@@ -362,7 +362,7 @@ async def create_product_request(
         )
 
 @router.get("/tickets", response_model=List[SupportTicketResponse])
-async def get_user_tickets(
+async def get_user_support_tickets(
     current_user=Depends(get_current_user),
     db: DatabaseManager = Depends(get_database)
 ):
