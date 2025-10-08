@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -23,15 +23,14 @@ class UpdateCartItemRequest(BaseModel):
         return v.strip()
 
 class CartItemResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     id: str = Field(..., alias="_id")
     product: dict
     quantity: int
     added_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
-    class Config:
-        allow_population_by_field_name = True
-
 class CartResponse(BaseModel):
     items: list[CartItemResponse] = []
     total_items: Optional[int] = None

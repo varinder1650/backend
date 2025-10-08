@@ -1,5 +1,5 @@
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field,ConfigDict
 from datetime import datetime
 from bson import ObjectId
 from schema.products import ProductResponse
@@ -97,6 +97,8 @@ class OrderResponse(BaseModel):
 
 
 class OrderResponseEnhanced(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     user: str
     user_info: Optional[UserInfo] = None
@@ -116,9 +118,9 @@ class OrderResponseEnhanced(BaseModel):
     delivery_partner: Optional[str] = None
     delivery_partner_info: Optional[UserInfo] = None
 
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {
-            ObjectId: str
-        }
+    # class Config:
+    #     allow_population_by_field_name = True
+    #     arbitrary_types_allowed = True
+    #     json_encoders = {
+    #         ObjectId: str
+    #     }

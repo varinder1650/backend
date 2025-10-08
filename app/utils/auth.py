@@ -153,10 +153,22 @@ def verify_password(plain_pass: str, hash_pass: str):
     """Verify password against hash"""
     return pwd_context.verify(plain_pass, hash_pass)
 
-def create_pasword_hash(password: str):
-    """Create password hash"""
-    return pwd_context.hash(password)
+# def create_pasword_hash(password: str):
+#     """Create password hash"""
+#     return pwd_context.hash(password)
 
+def create_pasword_hash(password: str) -> str:
+    """Hash password using bcrypt"""
+    from passlib.context import CryptContext
+    
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    
+    # Ensure password is not too long (bcrypt limit is 72 bytes)
+    if len(password.encode('utf-8')) > 72:
+        password = password[:72]
+    
+    return pwd_context.hash(password)
+    
 def create_access_token(data: dict, exp_time: timedelta):
     """
     Create JWT access token
