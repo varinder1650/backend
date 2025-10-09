@@ -2,8 +2,6 @@ fastapi
 uvicorn[standard]
 python-multipart
 python-jose[cryptography]
-# passlib[bcrypt]
-# motor
 pydantic-settings
 pymongo==4.9.1
 motor==3.6.0

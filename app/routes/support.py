@@ -26,7 +26,7 @@ async def create_support_ticket(
         logger.info(f"Creating support ticket for user {current_user.id}")
         
         ticket_doc = ticket_data.dict()
-        ticket_doc["user_id"] = ObjectId(current_user.id)
+        ticket_doc["user_id"] = current_user.id
         ticket_doc["user_name"] = current_user.name
         ticket_doc["user_email"] = current_user.email
         ticket_doc["status"] = SupportTicketStatus.OPEN
