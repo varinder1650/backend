@@ -9,6 +9,7 @@ class AddressBase(BaseModel):
     state: str = Field(..., min_length=1, max_length=100)
     pincode: str = Field(..., min_length=6, max_length=6)
     landmark: Optional[str] = Field(None, max_length=200)
+    mobile_number: str = Field(..., min_length=10, max_length=10, pattern=r'^\d{10}$')
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
@@ -22,12 +23,22 @@ class AddressUpdate(BaseModel):
     state: Optional[str] = None
     pincode: Optional[str] = None
     landmark: Optional[str] = None
+    mobile_number: Optional[str] = Field(None, min_length=10, max_length=10, pattern=r'^\d{10}$')
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
-class AddressResponse(AddressBase):
+class AddressResponse(BaseModel):
     id: str = Field(..., alias="_id")
     user_id: str
+    label: str = Field(..., min_length=1, max_length=50)
+    street: str = Field(..., min_length=1, max_length=200)
+    city: str = Field(..., min_length=1, max_length=100)
+    state: str = Field(..., min_length=1, max_length=100)
+    pincode: str = Field(..., min_length=6, max_length=6)
+    landmark: Optional[str] = Field(None, max_length=200)
+    mobile_number: Optional[str] = Field(None, min_length=10, max_length=10, pattern=r'^\d{10}$')
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     is_default: bool = False
     created_at: datetime
     updated_at: datetime

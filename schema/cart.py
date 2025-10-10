@@ -25,7 +25,7 @@ class UpdateCartItemRequest(BaseModel):
 class CartItemResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     
-    id: str = Field(..., alias="_id")
+    id: str
     product: dict
     quantity: int
     added_at: Optional[datetime] = None

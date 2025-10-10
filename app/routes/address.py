@@ -30,6 +30,13 @@ async def create_address(
 ):
     """Create a new address for the user"""
     try:
+        # Validate mobile number format
+        if not address_data.mobile_number.isdigit() or len(address_data.mobile_number) != 10:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Mobile number must be exactly 10 digits"
+            )
+        
         # Check address limit
         user_addresses_count = await db.count_documents("user_addresses", {
             "user_id": current_user.id
@@ -147,6 +154,78 @@ async def set_default_address(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to set default address"
+        )
+
+@router.put("/{address_id}", response_model=AddressResponse)
+async def update_address(
+    address_id: str,
+    address_data: AddressUpdate,
+    current_user=Depends(get_current_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """Update an address"""
+    try:
+        if not ObjectId.is_valid(address_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid address ID"
+            )
+        
+        # Check if address belongs to user
+        existing_address = await db.find_one("user_addresses", {
+            "_id": ObjectId(address_id),
+            "user_id": current_user.id
+        })
+        
+        if not existing_address:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Address not found"
+            )
+        
+        # Validate mobile number format if provided
+        if address_data.mobile_number is not None:
+            if not address_data.mobile_number.isdigit() or len(address_data.mobile_number) != 10:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Mobile number must be exactly 10 digits"
+                )
+        
+        # Prepare update data (only include non-null fields)
+        update_data = {}
+        for field, value in address_data.dict(exclude_unset=True).items():
+            if value is not None:
+                update_data[field] = value
+        
+        if not update_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fields to update"
+            )
+        
+        update_data["updated_at"] = datetime.utcnow()
+        
+        # Update the address
+        await db.update_one(
+            "user_addresses",
+            {"_id": ObjectId(address_id)},
+            {"$set": update_data}
+        )
+        
+        # Get the updated address
+        updated_address = await db.find_one("user_addresses", {"_id": ObjectId(address_id)})
+        fixed_address = fix_mongo_types(updated_address)
+        
+        logger.info(f"Address {address_id} updated successfully for user {current_user.email}")
+        return AddressResponse(**fixed_address)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update address error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update address"
         )
 
 @router.delete("/{address_id}")

@@ -12,7 +12,7 @@ router = APIRouter()
 
 class ShopStatusUpdate(BaseModel):
     is_open: bool
-    reopen_time: Optional[str] = None  # ISO format datetime string
+    reopen_time: Optional[str] = None
     reason: Optional[str] = None
 
 class ShopStatusResponse(BaseModel):

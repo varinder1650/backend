@@ -38,7 +38,7 @@ class TestCompleteUserJourney:
         assert len(products_response.json()["products"]) > 0
         
         # Step 3: Get product details
-        product_response = await client.get(f"/products/{test_product['_id']}")
+        product_response = await client.get(f"/products/{test_product['id']}")
         assert product_response.status_code == 200
         
         # Step 4: Add to cart
@@ -46,7 +46,7 @@ class TestCompleteUserJourney:
             "/cart/add",
             headers=headers,
             json={
-                "productId": str(test_product["_id"]),
+                "productId": str(test_product["id"]),
                 "quantity": 2
             }
         )
@@ -81,7 +81,7 @@ class TestCompleteUserJourney:
             headers=headers,
             json={
                 "items": [{
-                    "product_id": str(test_product["_id"]),
+                    "product_id": str(test_product["id"]),
                     "quantity": 2,
                     "price": test_product["price"]
                 }],
@@ -94,7 +94,7 @@ class TestCompleteUserJourney:
             }
         )
         assert order_response.status_code == 200
-        order_id = order_response.json()["_id"] if "_id" in order_response.json() else order_response.json()["id"]
+        order_id = order_response.json()["id"] if "_id" in order_response.json() else order_response.json()["id"]
         
         # Step 8: Verify cart is cleared (implementation dependent)
         cart_after_order = await client.get("/cart/", headers=headers)
@@ -124,13 +124,13 @@ class TestCompleteUserJourney:
         order_data = {
             "id": "ORDDELIVERY001",
             "_id": ObjectId(),
-            "user": ObjectId(test_user["_id"]),
+            "user": test_user["id"],
             "items": [{
-                "product": test_product["_id"],
+                "product": test_product["id"],
                 "quantity": 1,
                 "price": test_product["price"]
             }],
-            "order_status": "confirmed",
+            "order_status": "preparing",
             "total": 35.00,
             "accepted_partners": [],
             "created_at": datetime.utcnow()
@@ -147,17 +147,17 @@ class TestCompleteUserJourney:
         
         # Accept order
         accept_response = await client.post(
-            f"/delivery/{order_data['_id']}/accept",
+            f"/delivery/{order_data['id']}/accept",
             headers=delivery_headers
         )
         assert accept_response.status_code == 200
         
         # Update order status to assigned (simulate admin action)
         await test_db.orders.update_one(
-            {"_id": order_data["_id"]},
+            {"id": order_data["id"]},
             {"$set": {
                 "order_status": "out_for_delivery",
-                "delivery_partner": ObjectId(test_delivery_partner["_id"])
+                "delivery_partner": test_delivery_partner["id"]
             }}
         )
         
@@ -171,7 +171,7 @@ class TestCompleteUserJourney:
         
         # Mark as delivered
         delivered_response = await client.post(
-            f"/delivery/{order_data['_id']}/mark-delivered",
+            f"/delivery/{order_data['id']}/mark-delivered",
             headers=delivery_headers
         )
         assert delivered_response.status_code == 200
@@ -204,7 +204,7 @@ class TestSupportWorkflow:
             }
         )
         assert create_response.status_code == 200
-        ticket_id = create_response.json()["_id"]
+        ticket_id = create_response.json()["id"]
         
         # View ticket details
         detail_response = await client.get(
@@ -271,7 +271,7 @@ class TestPerformance:
                 "/cart/add",
                 headers=headers,
                 json={
-                    "productId": str(test_product["_id"]),
+                    "productId": str(test_product["id"]),
                     "quantity": 1
                 }
             )
@@ -342,12 +342,12 @@ class TestPerformance:
                 headers=headers,
                 json={
                     "items": [{
-                        "product_id": str(test_product["_id"]),
+                        "product_id": str(test_product["id"]),
                         "quantity": 1,
                         "price": test_product["price"]
                     }],
                     "payment_method": "card",
-                    "delivery_address_id": str(test_address["_id"]),
+                    "delivery_address": str(test_address["_id"]),
                     "subtotal": test_product["price"],
                     "tax": 2.40,
                     "delivery_fee": 5.00,
@@ -390,7 +390,7 @@ class TestDataConsistency:
                 "longitude": 0
             }
         )
-        address_id = address_response.json()["_id"]
+        address_id = address_response.json()
         
         # Create order
         order_response = await client.post(
@@ -398,12 +398,12 @@ class TestDataConsistency:
             headers=auth_headers,
             json={
                 "items": [{
-                    "product_id": str(test_product["_id"]),
+                    "product_id": str(test_product["id"]),
                     "quantity": order_quantity,
                     "price": test_product["price"]
                 }],
-                "payment_method": "card",
-                "delivery_address_id": address_id,
+                "payment_method": "cod",
+                "delivery_address": address_id,
                 "subtotal": test_product["price"] * order_quantity,
                 "tax": 12.00,
                 "delivery_fee": 5.00,
@@ -417,7 +417,7 @@ class TestDataConsistency:
         await asyncio.sleep(1)
         
         # Check stock was updated
-        updated_product = await test_db.products.find_one({"_id": test_product["_id"]})
+        updated_product = await test_db.products.find_one({"id": test_product["id"]})
         # Stock should be decreased (if background task ran)
         # This might vary based on implementation
         assert updated_product is not None
@@ -440,7 +440,7 @@ class TestDataConsistency:
             "/cart/add",
             headers={"Authorization": f"Bearer {token1}"},
             json={
-                "productId": str(test_product["_id"]),
+                "productId": str(test_product["id"]),
                 "quantity": 3
             }
         )
@@ -532,7 +532,7 @@ class TestErrorRecovery:
                 headers=headers,
                 json={
                     "items": [{
-                        "product_id": str(limited_product["_id"]),
+                        "product_id": str(limited_product["id"]),
                         "quantity": 2,
                         "price": 10.00
                     }],

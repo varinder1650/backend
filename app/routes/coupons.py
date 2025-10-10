@@ -23,8 +23,11 @@ async def validate_coupon(coupon_data:Dict,current_user:UserinDB = Depends(curre
                     "valid": valid,
                     "promocode": fix_mongo_types(result)
                 }
-            if amount >= result['min_order_amount']:
-                valid = True
+            if amount < result['min_order_amount']:
+                return {
+                    "valid": False,
+                    "promocode": fix_mongo_types(result)
+                }
             if result['target_audience'] == 'all_users':
                 valid = True
             elif result['target_audience'] == 'specific_users':
@@ -33,7 +36,7 @@ async def validate_coupon(coupon_data:Dict,current_user:UserinDB = Depends(curre
                 else:
                     valid = True
             elif result['target_audience'] == 'new_users':
-                new_user = await db.find_one('orders',{'user':ObjectId(current_user.id)})
+                new_user = await db.find_one('orders',{'user':current_user.id})
                 if new_user:
                     valid = False
                 else:

@@ -271,10 +271,10 @@ def delivery_headers(delivery_token):
 @pytest.fixture
 def create_test_order_data(test_product, test_address):
     """Helper to create order data"""
-    def _create_order(items=None, payment_method="card", delivery_address_id=None):
+    def _create_order(items=None, payment_method="cod"):
         if items is None:
             items = [{
-                "product_id": str(test_product["_id"]),
+                "product_id": str(test_product["id"]),
                 "quantity": 2,
                 "price": test_product["price"]
             }]
@@ -282,11 +282,16 @@ def create_test_order_data(test_product, test_address):
         return {
             "items": items,
             "payment_method": payment_method,
-            "delivery_address_id": delivery_address_id or str(test_address["_id"]),
+            "delivery_address": {
+                "address":"Prestige Jindal City, 560073, 560073",
+                "city":"Prestige Jindal City",
+                "state":"560073",
+                "pincode":"560073"
+                },
             "subtotal": sum(item["price"] * item["quantity"] for item in items),
             "tax": 2.40,
             "delivery_fee": 5.00,
-            "total": 67.38
+            "total_amount": 67.38
         }
     
     return _create_order

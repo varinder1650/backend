@@ -138,7 +138,7 @@ class TestLogin:
         """Test login with inactive user account"""
         # Deactivate user
         await test_db.users.update_one(
-            {"_id": test_user["_id"]},
+            {"id": test_user["id"]},
             {"$set": {"is_active": False}}
         )
         
@@ -161,6 +161,7 @@ class TestGoogleLogin:
         response = await client.post(
             "/auth/google",
             json={
+                "googleToken":"googletoken",
                 "user": {
                     "email": "googleuser@example.com",
                     "name": "Google User",
@@ -190,7 +191,7 @@ class TestGoogleLogin:
             "email": "existing@gmail.com",
             "phone": "TEMP_google123",
             "phone_is_temporary": True,
-            "hashed_password": create_pasword_hash("dummy"),
+            # "hashed_password": create_pasword_hash("dummy"),
             "role": "customer",
             "is_active": True,
             "provider": "google",
@@ -203,6 +204,7 @@ class TestGoogleLogin:
         response = await client.post(
             "/auth/google",
             json={
+                "googleToken":"googletoken",
                 "user": {
                     "email": "existing@gmail.com",
                     "name": "Existing Google User",
@@ -220,6 +222,7 @@ class TestGoogleLogin:
         response = await client.post(
             "/auth/google",
             json={
+                "googleToken":"googletoken",
                 "user": {
                     "email": "incomplete@gmail.com"
                 }

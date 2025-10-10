@@ -322,7 +322,7 @@ async def get_product(
     db: DatabaseManager = Depends(get_database)
 ):
     """Get a specific product by ID for mobile app"""
-    print(product_id)
+    # print(product_id)
     try:
         logger.info(f"Getting product by ID: {product_id}")
         
@@ -420,7 +420,7 @@ async def get_product(
     except Exception as e:
         logger.error(f"Get product error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_400_INTERNAL_SERVER_ERROR,
             detail="Failed to get product"
         )
 
