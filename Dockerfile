@@ -14,7 +14,11 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first (for better caching)
 COPY requirements.txt .
 
-# Install Python dependencies
+# Create and activate virtual environment
+RUN python -m venv /app/venv
+
+# Activate virtual environment and install Python dependencies
+ENV PATH="/app/venv/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 

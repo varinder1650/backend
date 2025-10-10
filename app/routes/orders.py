@@ -1,6 +1,7 @@
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 import logging
+from typing import Optional
 from app.cache.redis_manager import get_redis
 from app.services.order_service import OrderService
 from app.utils.auth import current_active_user, get_current_user
@@ -201,34 +202,36 @@ async def update_inventory_after_order(items: list, db: DatabaseManager):
 
 @router.get("/active")
 async def get_active_order(
-    current_user: UserinDB = Depends(current_active_user),
+    current_user = Depends(get_current_user),
     db: DatabaseManager = Depends(get_database)
-):
+) -> Optional[dict]:
     """
     Get user's most recent active order (single order)
     Returns only the most recent order that's actively being processed
     """
     try:
+        # Handle case when user is not authenticated
+        if not current_user:
+            logger.info("No authenticated user found")
+            return None
+            
         logger.info(f"Fetching active order for user: {current_user.email}")
-        # print(current_user)
+        
         orders = await db.find_many(
             "orders",
             {
                 "user": current_user.id,
                 "order_status": {
-                    "$in": ["confirmed", "assigning","preparing", "assigned", "out_for_delivery", "arrived"]
+                    "$in": ["confirmed", "assigning","preparing", "assigned", "out_for_delivery", "arrived", "delivered"]
                 }
             },
             sort=[("created_at", -1)],
             limit=1  # ✅ Only get the most recent one
         )
-        # print(orders)
+        
         if not orders or len(orders) == 0:
             logger.info(f"No active order found for user {current_user.email}")
-            raise HTTPException(
-                status_code=404, 
-                detail="No active order found"
-            )
+            return None  # Return null instead of 404
         
         # Get the first (most recent) order
         order = orders[0]
