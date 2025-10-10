@@ -145,7 +145,11 @@ class AuthService:
             if not verify_password(password, auth['hashed_password']):
                 logger.warning(f"Invalid password for user {username}")
                 return None
-                
+            
+            # if auth.is_active == False:
+            #     logger.warning("User is inactive")
+            #     return None
+
             logger.info(f"User {username} authenticated successfully")
             return auth
             

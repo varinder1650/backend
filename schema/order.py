@@ -76,7 +76,7 @@ class OrderInDB(OrderBase):
 
 
 class OrderResponse(BaseModel):
-    id: str = Field(None, alias="_id")
+    id: str
     user: str
     user_info: Optional[UserInfo] = None
     items: List[OrderItemResponse]   # product is just ID

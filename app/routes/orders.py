@@ -45,7 +45,7 @@ async def create_order(
         background_tasks.add_task(update_inventory_after_order, order_data.get('items', []), db)
         
         created_order = await db.find_one("orders", {"_id": ObjectId(order_id)})
-        created_order['_id'] = str(created_order["_id"])
+        created_order['id'] = str(created_order["id"])
         created_order["user"] = str(created_order['user'])
         for item in created_order.get("items", []):
             if isinstance(item.get("product"), ObjectId):

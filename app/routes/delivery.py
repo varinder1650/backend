@@ -241,7 +241,7 @@ async def accept_delivery_order(
         
         # Validate order_id
         try:
-            order_object_id = order_id
+            order_object_id = str(order_id)
         except Exception:
             logger.error("Invalid order ID")
             raise HTTPException(
