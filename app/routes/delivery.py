@@ -1,11 +1,13 @@
 from datetime import datetime
 from bson import ObjectId
-from fastapi import HTTPException,APIRouter, Depends, status
+from fastapi import HTTPException,APIRouter, Depends, status,BackgroundTasks
 from app.utils.auth import current_active_user
 from app.utils.mongo import fix_mongo_types
 from db.db_manager import DatabaseManager, get_database
 from schema.user import UserinDB
 import logging
+from app.routes.notifications import create_notification
+from app.services.email_service import email_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -295,7 +297,6 @@ async def accept_delivery_order(
                 "accepted_partners": accepted_partners,
                 "order_status": "assigning",
                 "accepted_at": current_time,
-                "accepted_at": current_time,  # Timestamp for this specific status
                 "updated_at": current_time,
                 "status_message": f"Order accepted by {current_user.name}"
             },
@@ -308,6 +309,16 @@ async def accept_delivery_order(
             "orders",
             {"id": order_id},
             update_data
+        )
+        
+        # Create notification for user
+        await create_notification(
+            db=db,
+            user_id=order.get("user"),
+            title="Delivery Partner Found",
+            message=f"A delivery partner is reviewing your order from {order.get('restaurant_name', 'the restaurant')}.",
+            notification_type="order",
+            order_id=order_id
         )
         
         logger.info(f"Order {order_id} assigned to delivery partner {current_user.id}")
@@ -323,15 +334,17 @@ async def accept_delivery_order(
             detail="Failed to accept order"
         )
 
+
 @router.post("/{order_id}/mark-delivered")
 async def mark_order_as_delivered(
     order_id: str,
+    background_tasks: BackgroundTasks,  # Add this
     current_user: UserinDB = Depends(current_active_user),
     db: DatabaseManager = Depends(get_database)
 ):
     """Mark an assigned order as delivered"""
     try:
-        # Check if user is a delivery partner
+        #    Check if user is a delivery partner
         if current_user.role != "delivery_partner":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -388,6 +401,29 @@ async def mark_order_as_delivered(
                 }
             }
         )
+        
+        # Get user info for email
+        user_info = await db.find_one("users", {"id": order.get("user")})
+        
+        # Create notification for user
+        await create_notification(
+            db=db,
+            user_id=order.get("user"),
+            title="Order Delivered! 🎉",
+            message=f"Your order from {order.get('restaurant_name', 'the restaurant')} has been delivered. Enjoy your meal!",
+            notification_type="order",
+            order_id=order_id
+        )
+        
+        # Send email notification in background
+        if user_info and user_info.get("email"):
+            background_tasks.add_task(
+                email_service.send_order_status_update,
+                user_info.get("email"),
+                order_id,
+                "delivered",
+                user_info.get("name", "Customer")
+            )
         
         logger.info(f"Order {order_id} marked as delivered by delivery partner {current_user.id}")
         

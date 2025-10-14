@@ -23,7 +23,7 @@ router = APIRouter()
 
 @router.post("/register", response_model=TokenOut)
 @rate_limit(max_requests=5, window_seconds=300)  # 5 requests per 5 minutes
-async def register_user(request: Request, user_data: UserCreate, db: DatabaseManager = Depends(get_database)):
+async def register_user(user_data: UserCreate, db: DatabaseManager = Depends(get_database)):
     try:
         auth_service = AuthService(db)
         custom_id = await id_generator.generate_user_id(user_data.email,"customer")
@@ -41,7 +41,7 @@ async def register_user(request: Request, user_data: UserCreate, db: DatabaseMan
 
 @router.post("/login", response_model=TokenOut)
 @rate_limit(max_requests=10, window_seconds=300)  # 10 requests per 5 minutes
-async def login_user(request: Request, user_data: UserLogin, db: DatabaseManager = Depends(get_database)):
+async def login_user(request: Request,user_data: UserLogin, db: DatabaseManager = Depends(get_database)):
     try:
         auth_service = AuthService(db)
         user = await auth_service.authenticate_user(db, user_data.email, user_data.password)
@@ -55,11 +55,11 @@ async def login_user(request: Request, user_data: UserLogin, db: DatabaseManager
         # ✅ USE CUSTOM ID consistently
         user_custom_id = str(user['id'])
         
-        access = create_access_token(
+        access_token = create_access_token(
             data={'sub': user_custom_id, 'role': user['role']},
             exp_time=timedelta(minutes=int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES')))
         )
-        refresh = await create_refresh_token(user_custom_id, db)
+        refresh_token = await create_refresh_token(user_custom_id, db)
         
         logger.info(f"User {user['email']} logged in successfully")
         
@@ -85,14 +85,14 @@ async def login_user(request: Request, user_data: UserLogin, db: DatabaseManager
             "city": user.get("city"),
             "state": user.get("state"),
             "pincode": user.get("pincode"),
-            "role": user.get("role", "user"),
+            "role": user.get("role", "customer"),
             "is_active": user.get("is_active", True),
             "provider": user.get("provider", "local")
         }
         
         return TokenOut(
-            access_token=access,
-            refresh_token=refresh,
+            access_token=access_token,
+            refresh_token=refresh_token,
             requires_phone=requires_phone,
             token_type="bearer",
             user=UserResponse(**user_response)
@@ -129,7 +129,7 @@ async def update_phone(
             "city": updated_user.get("city"),
             "state": updated_user.get("state"),
             "pincode": updated_user.get("pincode"),
-            "role": updated_user.get("role", "user"),
+            "role": updated_user.get("role", "customer"),
             "is_active": updated_user.get("is_active", True),
             "provider": updated_user.get("provider", "local")
         }
@@ -180,84 +180,195 @@ async def update_profile(user_info: UpdateUser, db: DatabaseManager = Depends(ge
             detail="Failed to update profile"
         )
 
-@router.post("/google", response_model=TokenOut)
-@rate_limit(max_requests=10, window_seconds=300)  # 10 requests per 5 minutes
-async def google_login(request: Request, user_info: GoogleLogin, db: DatabaseManager = Depends(get_database)):
+# @router.post("/refresh")
+# @rate_limit(max_requests=20, window_seconds=300)  # 20 requests per 5 minutes
+# async def refresh_token(
+#     request: Request,
+#     refresh_data: dict,
+#     db: DatabaseManager = Depends(get_database)
+# ):
+#     try:
+#         refresh_token = refresh_data.get("refresh_token")
+#         if not refresh_token:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Refresh token required"
+#             )
+        
+#         # Decode refresh token
+#         try:
+#             print("refresh_token: ",refresh_token)
+#             payload = jwt.decode(
+#                 refresh_token, 
+#                 os.getenv('SECRET_KEY'), 
+#                 algorithms=[os.getenv('ALGORITHM')]
+#             )
+#             print("payload: ",payload)
+#             user_id = payload.get("sub")  # ✅ This is the custom user ID
+#             jti = payload.get("jti")
+            
+#             logger.info(f"🔍 Decoded token - user_id: {user_id}, jti: {jti}")
+            
+#         except JWTError as e:
+#             logger.error(f"JWT decode error: {e}")
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="Invalid refresh token"
+#             )
+        
+#         # ✅ Check if refresh token exists - using user_id (custom ID)
+#         stored_token = await db.find_one("refresh_tokens", {
+#             "user_id": user_id, 
+#             "jti": jti
+#         })
+        
+#         logger.info(f"🔍 Stored token found: {stored_token is not None}")
+        
+#         if not stored_token:
+#             logger.warning(f"Refresh token not found for user {user_id}")
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="Refresh token not found or already used"
+#             )
+        
+#         # Check if token is expired
+#         if stored_token["expire"] < datetime.utcnow():
+#             await db.delete_one("refresh_tokens", {"jti": jti})
+#             logger.warning(f"Refresh token expired for user {user_id}")
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="Refresh token expired"
+#             )
+        
+#         # ✅ Get user by custom ID field
+#         user = await db.find_one("users", {"id": user_id})
+        
+#         if not user:
+#             logger.error(f"❌ User not found with id: {user_id}")
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="User not found"
+#             )
+        
+#         logger.info(f"✅ User found: {user.get('email')}")
+        
+#         # ✅ Create new access token using custom ID
+#         access_token = create_access_token(
+#             data={'sub': str(user['id']), 'role': user['role']},
+#             exp_time=timedelta(minutes=int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30)))
+#         )
+        
+#         logger.info(f"✅ Token refreshed successfully for user {user['id']}")
+        
+#         return {
+#             "access_token": access_token,
+#             "token_type": "bearer"
+#         }
+        
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Token refresh error: {str(e)}")
+#         import traceback
+#         logger.error(traceback.format_exc())
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Token refresh failed"
+#         )
+
+@router.post("/refresh")
+@rate_limit(max_requests=20, window_seconds=300)
+async def refresh_token(
+    refresh_data: dict,
+    db: DatabaseManager = Depends(get_database)
+):
     try:
-        logger.info(f"Google login attempt: {user_info.dict()}")
-        
-        user_data = user_info.user
-        email = user_data.get("email")
-        name = user_data.get("name") 
-        google_id = user_data.get("googleId") or user_data.get("id")
-        
-        if not email or not name:
-            logger.error(f"Missing required Google user data: email={email}, name={name}")
+        refresh_token = refresh_data.get("refresh_token")
+        if not refresh_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing required user information from Google"
+                detail="Refresh token required"
             )
         
-        logger.info(f"Processing Google login for: {email}")
+        # Decode refresh token
+        try:
+            payload = jwt.decode(
+                refresh_token, 
+                os.getenv('SECRET_KEY'), 
+                algorithms=[os.getenv('ALGORITHM')]
+            )
+            user_id = payload.get("sub")
+            jti = payload.get("jti")
+            
+            logger.info(f"🔍 Decoded token - user_id: {user_id}, jti: {jti}")
+            
+        except JWTError as e:
+            logger.error(f"JWT decode error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token"
+            )
         
-        auth_service = AuthService(db)
-        custom_id = await id_generator.generate_user_id(email,"customer")
-        user, requires_phone = await auth_service.create_or_get_google_user(email, name, google_id,custom_id)
+        # Check if refresh token exists and is valid
+        stored_token = await db.find_one("refresh_tokens", {
+            "user_id": user_id, 
+            "jti": jti
+        })
         
-        # ✅ USE CUSTOM ID consistently
-        user_custom_id = str(user['id'])
+        if not stored_token:
+            logger.warning(f"Refresh token not found for user {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token not found or already used"
+            )
         
-        # Create JWT tokens
-        access = create_access_token(
-            data={'sub': user_custom_id, 'role': user.get('role', 'customer')},
+        # Check if token is expired
+        if stored_token["expire"] < datetime.utcnow():
+            await db.delete_one("refresh_tokens", {"jti": jti})
+            logger.warning(f"Refresh token expired for user {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token expired"
+            )
+        
+        # Get user
+        user = await db.find_one("users", {"id": user_id})
+        
+        if not user:
+            logger.error(f"❌ User not found with id: {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+        
+        logger.info(f"✅ User found: {user.get('email')}")
+        
+        # ✅ CREATE NEW ACCESS TOKEN ONLY
+        access_token = create_access_token(
+            data={'sub': str(user['id']), 'role': user['role']},
             exp_time=timedelta(minutes=int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30)))
         )
-        refresh = await create_refresh_token(user_custom_id, db)
         
-        # Format user response
-        display_phone = user.get("phone")
-        if display_phone and (
-            display_phone.startswith("TEMP_") or 
-            user.get("phone_is_temporary", False)
-        ):
-            display_phone = None
-            requires_phone = True
+        logger.info(f"✅ Access token refreshed successfully for user {user['id']}")
         
-        user_response = {
-            "id": user_custom_id,
-            "name": user["name"],
-            "email": user["email"],
-            "phone": display_phone,
-            "address": user.get("address"),
-            "city": user.get("city"),
-            "state": user.get("state"),
-            "pincode": user.get("pincode"),
-            "role": user.get("role", "customer"),
-            "is_active": user.get("is_active", True),
-            "provider": user.get("provider", "google")
+        # ✅ RETURN ONLY NEW ACCESS TOKEN (keep same refresh token)
+        return {
+            "access_token": access_token,
+            "token_type": "bearer"
+            # NO refresh_token in response - client keeps using the same one
         }
-        
-        logger.info(f"Google user {email} logged in successfully, requires_phone: {requires_phone}")
-        
-        return TokenOut(
-            access_token=access,
-            refresh_token=refresh,
-            requires_phone=requires_phone,
-            token_type="bearer",
-            user=UserResponse(**user_response)
-        )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Google login error: {str(e)}")
+        logger.error(f"Token refresh error: {str(e)}")
         import traceback
-        logger.error(f"Full traceback: {traceback.format_exc()}")
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Google authentication failed: {str(e)}"
+            detail="Token refresh failed"
         )
-
+        
 @router.post("/forgot-password")
 @rate_limit(max_requests=3, window_seconds=3600)  # 3 requests per hour
 async def forgot_password(
@@ -371,126 +482,14 @@ async def reset_password(
             detail="Failed to reset password"
         )
 
-@router.post("/refresh")
-@rate_limit(max_requests=20, window_seconds=300)  # 20 requests per 5 minutes
-async def refresh_token(
-    request: Request,
-    refresh_data: dict,
-    db: DatabaseManager = Depends(get_database)
-):
-    try:
-        refresh_token = refresh_data.get("refresh_token")
-        if not refresh_token:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Refresh token required"
-            )
-        
-        # Decode refresh token
-        try:
-            payload = jwt.decode(
-                refresh_token, 
-                os.getenv('SECRET_KEY'), 
-                algorithms=[os.getenv('ALGORITHM')]
-            )
-            user_id = payload.get("sub")  # ✅ This is the custom user ID
-            jti = payload.get("jti")
-            
-            logger.info(f"🔍 Decoded token - user_id: {user_id}, jti: {jti}")
-            
-        except JWTError as e:
-            logger.error(f"JWT decode error: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token"
-            )
-        
-        # ✅ Check if refresh token exists - using user_id (custom ID)
-        stored_token = await db.find_one("refresh_tokens", {
-            "user_id": user_id, 
-            "jti": jti
-        })
-        
-        logger.info(f"🔍 Stored token found: {stored_token is not None}")
-        
-        if not stored_token:
-            logger.warning(f"Refresh token not found for user {user_id}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token not found or already used"
-            )
-        
-        # Check if token is expired
-        if stored_token["expire"] < datetime.utcnow():
-            await db.delete_one("refresh_tokens", {"jti": jti})
-            logger.warning(f"Refresh token expired for user {user_id}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token expired"
-            )
-        
-        # ✅ Get user by custom ID field
-        user = await db.find_one("users", {"id": user_id})
-        
-        if not user:
-            logger.error(f"❌ User not found with id: {user_id}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found"
-            )
-        
-        logger.info(f"✅ User found: {user.get('email')}")
-        
-        # ✅ Create new access token using custom ID
-        access_token = create_access_token(
-            data={'sub': str(user['id']), 'role': user['role']},
-            exp_time=timedelta(minutes=int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30)))
-        )
-        
-        logger.info(f"✅ Token refreshed successfully for user {user['id']}")
-        
-        return {
-            "access_token": access_token,
-            "token_type": "bearer"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Token refresh error: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Token refresh failed"
-        )
-
 @router.post("/logout")
 @rate_limit(max_requests=10, window_seconds=60)  # 10 requests per minute
 async def logout(
-    request: Request,
-    data: dict,
     db: DatabaseManager = Depends(get_database),
     current_user=Depends(get_current_user)
 ):
     try:
-        # ✅ Delete all refresh tokens for this user
-        refresh_token = data.get("refresh_token")
-        
-        if refresh_token:
-            try:
-                payload = jwt.decode(
-                    refresh_token, 
-                    os.getenv('SECRET_KEY'), 
-                    algorithms=[os.getenv('ALGORITHM')]
-                )
-                jti = payload.get("jti")
-                
-                # Delete this specific refresh token
-                await db.delete_one("refresh_tokens", {"jti": jti})
-                logger.info(f"Deleted refresh token for user {current_user.id}")
-            except JWTError:
-                logger.warning("Invalid refresh token provided during logout")
+        await db.delete_one('refresh_tokens', {'user_id':current_user.id})
         
         return {
             "success": True,
@@ -503,6 +502,84 @@ async def logout(
             detail="Logout failed"
         )
 
+
+@router.post("/google", response_model=TokenOut)
+@rate_limit(max_requests=10, window_seconds=300)  # 10 requests per 5 minutes
+async def google_login(user_info: GoogleLogin, db: DatabaseManager = Depends(get_database)):
+    try:
+        logger.info(f"Google login attempt: {user_info.dict()}")
+        
+        user_data = user_info.user
+        email = user_data.get("email")
+        name = user_data.get("name") 
+        google_id = user_data.get("googleId") or user_data.get("id")
+        
+        if not email or not name:
+            logger.error(f"Missing required Google user data: email={email}, name={name}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required user information from Google"
+            )
+        
+        logger.info(f"Processing Google login for: {email}")
+        
+        auth_service = AuthService(db)
+        custom_id = await id_generator.generate_user_id(email,"customer")
+        user, requires_phone = await auth_service.create_or_get_google_user(email, name, google_id,custom_id)
+        
+        # ✅ USE CUSTOM ID consistently
+        user_custom_id = str(user['id'])
+        
+        # Create JWT tokens
+        access = create_access_token(
+            data={'sub': user_custom_id, 'role': user.get('role', 'customer')},
+            exp_time=timedelta(minutes=int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30)))
+        )
+        refresh = await create_refresh_token(user_custom_id, db)
+        
+        # Format user response
+        display_phone = user.get("phone")
+        if display_phone and (
+            display_phone.startswith("TEMP_") or 
+            user.get("phone_is_temporary", False)
+        ):
+            display_phone = None
+            requires_phone = True
+        
+        # user_response = {
+        #     "id": user_custom_id,
+        #     "name": user["name"],
+        #     "email": user["email"],
+        #     "phone": display_phone,
+        #     "address": user.get("address"),
+        #     "city": user.get("city"),
+        #     "state": user.get("state"),
+        #     "pincode": user.get("pincode"),
+        #     "role": user.get("role", "customer"),
+        #     "is_active": user.get("is_active", True),
+        #     "provider": user.get("provider", "google")
+        # }
+        
+        logger.info(f"Google user {email} logged in successfully, requires_phone: {requires_phone}")
+        
+        return TokenOut(
+            access_token=access,
+            refresh_token=refresh,
+            requires_phone=requires_phone,
+            token_type="bearer",
+            # user=UserResponse(**user_response)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Google login error: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Google authentication failed: {str(e)}"
+        )
 # Email service function
 async def send_password_reset_email(email: str, name: str, reset_token: str):
     """Send password reset email"""

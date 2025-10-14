@@ -124,3 +124,8 @@ class OrderResponseEnhanced(BaseModel):
     #     json_encoders = {
     #         ObjectId: str
     #     }
+
+class OrderRating(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    review: str = Field(default="", max_length=500)
+    order_id: str
