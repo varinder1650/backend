@@ -1,34 +1,3 @@
-# from typing import Optional
-# from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# class Settings(BaseSettings):
-#     # Application
-#     APP_NAME: str = "SmartBag"
-#     DEBUG: bool = False
-#     PORT: int = 8000
-    
-#     # Security
-#     SECRET_KEY: str
-#     ALGORITHM: str = "HS256"
-#     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-
-#     # Cloudinary settings
-#     cloudinary_cloud_name: Optional[str] = None
-#     cloudinary_api_key: Optional[str] = None
-#     cloudinary_api_secret: Optional[str] = None
-    
-#     # Database
-#     MONGO_URI: str
-#     DB_NAME: str = "smartbag"
-    
-#     # CORS
-#     ALLOWED_ORIGINS: str = "http://localhost:3000"
-    
-#     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
-
-# settings = Settings()
-
-# db/config.py - Updated to include Ola Krutrim API key
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
@@ -39,12 +8,12 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # Database settings
-    mongo_url: str = "mongodb://localhost:27017"
-    db_name: str = "smartbag"
+    mongo_url: str = os.getenv('MONGO_URI')
+    db_name: str = os.getenv('DB_NAME')
     
     # JWT settings
-    secret_key: str = "your-secret-key-here"
-    algorithm: str = "HS256"
+    secret_key: str = os.getenv('SECRET_KEY')
+    algorithm: str = os.getenv('ALGORITHM')
     access_token_expire_minutes: int = 1440
     
     # API settings
@@ -62,7 +31,7 @@ class Settings(BaseSettings):
         
         # Environment variable names (optional - pydantic auto-detects)
         fields = {
-            'mongo_url': {'env': 'MONGO_URL'},
+            'mongo_url': {'env': 'MONGO_URI'},
             'db_name': {'env': 'DB_NAME'},
             'secret_key': {'env': 'SECRET_KEY'},
             'algorithm': {'env': 'ALGORITHM'},

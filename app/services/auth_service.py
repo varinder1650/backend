@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class AuthService:
     def __init__(self, db: DatabaseManager):
         self.db = db
-    async def create_user(self, user_data: UserCreate,id:str = None):
+    async def create_user(self, user_data: UserCreate, id:str = None):
         try:
             logger.info(f"Creating user with email: {user_data.email}")
             
@@ -77,7 +77,7 @@ class AuthService:
             
             user_id = await self.db.insert_one("users", user_doc)
             user_id = str(user_id)
-            logger.info(f"User created with ID: {user_id}")
+            # logger.info(f"User created with ID: {user_id}")
             
             # Get the created user for response
             created_user = await self.db.find_one("users", {"_id": ObjectId(user_id)})
@@ -90,38 +90,38 @@ class AuthService:
             
             # Create tokens
             logger.info("Creating access token...")
-            access = create_access_token(
-                data={'sub': user_id, 'role': created_user.get('role', 'customer')},
+            access_token = create_access_token(
+                data={'sub': id, 'role': created_user.get('role', 'customer')},
                 exp_time=timedelta(minutes=int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30)))
             )
             
             logger.info("Creating refresh token...")
-            refresh = await create_refresh_token(user_id, self.db)
+            refresh_token = await create_refresh_token(id, self.db)
             
             logger.info("User registration completed successfully")
             
             # Format user response
-            user_response = {
-                "id": str(created_user["id"]),
-                "name": created_user["name"],
-                "email": created_user["email"],
-                "phone": created_user.get("phone"),  
-                "address": created_user.get("address"),
-                "city": created_user.get("city"),
-                "state": created_user.get("state"),
-                "pincode": created_user.get("pincode"),
-                "role": created_user.get("role", "customer"),
-                "is_active": created_user.get("is_active", True),
-                "provider": created_user["provider"]
-            }
+            # user_response = {
+            #     "id": str(created_user["id"]),
+            #     "name": created_user["name"],
+            #     "email": created_user["email"],
+            #     "phone": created_user.get("phone"),  
+            #     "address": created_user.get("address"),
+            #     "city": created_user.get("city"),
+            #     "state": created_user.get("state"),
+            #     "pincode": created_user.get("pincode"),
+            #     "role": created_user.get("role", "customer"),
+            #     "is_active": created_user.get("is_active", True),
+            #     "provider": created_user["provider"]
+            # }
             
             # Return in TokenOut format
             return {
-                "access_token": access,
-                "refresh_token": refresh,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
                 "requires_phone": requires_phone,
                 "token_type": "bearer",
-                "user": user_response
+                # "user": user_response
             }
             
         except HTTPException:
@@ -146,11 +146,12 @@ class AuthService:
                 logger.warning(f"Invalid password for user {username}")
                 return None
             
-            # if auth.is_active == False:
-            #     logger.warning("User is inactive")
-            #     return None
+            if auth['is_active'] == False:
+                logger.warning("User is inactive")
+                return None
 
             logger.info(f"User {username} authenticated successfully")
+            
             return auth
             
         except Exception as e:

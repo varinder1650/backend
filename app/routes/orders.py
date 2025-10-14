@@ -1,12 +1,15 @@
+from datetime import datetime
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 import logging
 from typing import Optional
 from app.cache.redis_manager import get_redis
 from app.services.order_service import OrderService
+from app.services.email_service import email_service  # Add this import
+from app.routes.notifications import create_notification  # Add this import
 from app.utils.auth import current_active_user, get_current_user
 from db.db_manager import DatabaseManager, get_database
-from schema.order import OrderResponse, OrderResponseEnhanced
+from schema.order import OrderResponse, OrderResponseEnhanced, OrderRating
 from schema.user import UserinDB
 from app.utils.mongo import fix_mongo_types
 from app.utils.id_generator import get_id_generator
@@ -29,9 +32,25 @@ async def create_order(
         
         order_service = OrderService(db)
         custom_id = await id_generator.generate_order_id(current_user.id)
-        order_id = await order_service.create_order(order_data, current_user,custom_id)
+        order_id = await order_service.create_order(order_data, current_user, custom_id)
 
         logger.info(f"Order created successfully with ID: {order_id}")
+        
+        # Get the created order details
+        created_order = await db.find_one("orders", {"_id": ObjectId(order_id)})
+        
+        # Create notification for order confirmation
+        try:
+            await create_notification(
+                db=db,
+                user_id=current_user.id,
+                title="Order Placed Successfully! ✓",
+                message=f"Your order #{created_order.get('id', order_id)} has been placed and will be confirmed shortly.",
+                notification_type="order",
+                order_id=str(created_order.get('id', order_id))
+            )
+        except Exception as notif_error:
+            logger.error(f"Failed to create notification: {notif_error}")
         
         # Invalidate user's cart and order caches
         redis = get_redis()
@@ -42,10 +61,15 @@ async def create_order(
             logger.warning(f"Cache invalidation error: {cache_error}")
         
         # Add background tasks for order processing
-        background_tasks.add_task(send_order_confirmation_email, order_id, current_user.email)
+        background_tasks.add_task(
+            send_order_confirmation_email, 
+            created_order, 
+            current_user.email,
+            current_user.name
+        )
         background_tasks.add_task(update_inventory_after_order, order_data.get('items', []), db)
         
-        created_order = await db.find_one("orders", {"_id": ObjectId(order_id)})
+        # Format response
         created_order['id'] = str(created_order["id"])
         created_order["user"] = str(created_order['user'])
         for item in created_order.get("items", []):
@@ -132,12 +156,10 @@ async def get_my_orders(
 
                 try:
                     validated_order = OrderResponseEnhanced(**fixed_order)
-                    # ✅ Convert to dict with by_alias to ensure 'id' field
                     order_dict = validated_order.model_dump(by_alias=True)
                     enhanced_orders.append(order_dict)
                 except Exception as validation_error:
                     logger.error(f"Validation error: {validation_error}")
-                    # Fallback: use fixed_order as dict
                     enhanced_orders.append(fixed_order)
                     
             except Exception as order_error:
@@ -173,11 +195,29 @@ async def get_my_orders(
         )
 
 # Background task helpers
-async def send_order_confirmation_email(order_id: str, email: str):
+async def send_order_confirmation_email(order: dict, email: str, customer_name: str):
     """Send order confirmation email"""
     try:
-        # Implement email sending logic
-        logger.info(f"Order confirmation email sent for order {order_id} to {email}")
+        # Prepare order data for email
+        order_data = {
+            'order_id': str(order.get('id', 'N/A')),
+            'customer_name': customer_name,
+            'items': [
+                {
+                    'name': item.get('product_name', 'Product'),
+                    'quantity': item.get('quantity', 1),
+                    'price': item.get('price', 0)
+                }
+                for item in order.get('items', [])
+            ],
+            'total_amount': order.get('total_amount', 0),
+            'estimated_delivery': order.get('estimated_delivery_time', '30-40 minutes'),
+            'restaurant_name': order.get('restaurant_name', 'Restaurant'),
+            'delivery_address': order.get('delivery_address', {}).get('address', 'N/A')
+        }
+        
+        await email_service.send_order_confirmation(email, order_data)
+        logger.info(f"Order confirmation email sent for order {order_data['order_id']} to {email}")
     except Exception as e:
         logger.error(f"Email sending failed: {e}")
 
@@ -222,16 +262,16 @@ async def get_active_order(
             {
                 "user": current_user.id,
                 "order_status": {
-                    "$in": ["confirmed", "assigning","preparing", "assigned", "out_for_delivery", "arrived", "delivered"]
+                    "$in": ["confirmed", "assigning", "preparing", "assigned", "out_for_delivery", "arrived", "delivered"]
                 }
             },
             sort=[("created_at", -1)],
-            limit=1  # ✅ Only get the most recent one
+            limit=1
         )
         
         if not orders or len(orders) == 0:
             logger.info(f"No active order found for user {current_user.email}")
-            return None  # Return null instead of 404
+            return None
         
         # Get the first (most recent) order
         order = orders[0]
@@ -267,10 +307,10 @@ async def get_active_order(
                 "Your order is being processed."
             )
         
-        for item in order.get('items'):
+        for item in order.get('items', []):
             product = await db.find_one('products', {"id": item['product']})
-
-            item['product_name'] = product['name']
+            if product:
+                item['product_name'] = product['name']
         
         # Serialize and return single order
         serialized_order = fix_mongo_types(order)
@@ -288,3 +328,113 @@ async def get_active_order(
             status_code=500, 
             detail="Failed to fetch active order"
         )
+
+
+@router.post('/{order_id}/rate')
+async def rate_order(
+    order_id: str,
+    rating_data: OrderRating,
+    current_user: UserinDB = Depends(current_active_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """
+    Submit rating for a delivered order
+    """
+    try:
+        # Find the order
+        order = await db.find_one(
+            "orders",
+            {"id": order_id, "user": current_user.id}
+        )
+
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found"
+            )
+
+        if order.get("order_status") != 'delivered':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only rate delivered orders"
+            )
+
+        # Check if already rated
+        if order.get("rating"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Order has already been rated"
+            )
+
+        # Update order rating
+        await db.update_one(
+            "orders",
+            {"id": order_id},
+            {
+                "$set": {
+                    "rating": rating_data.rating,
+                    "review": rating_data.review,
+                    "rated_at": datetime.utcnow()
+                }
+            }
+        )
+
+        # Update delivery partner's average rating if applicable
+        if order.get("delivery_partner"):
+            await update_delivery_partner_rating(
+                db=db,
+                partner_id=order["delivery_partner"],
+                new_rating=rating_data.rating
+            )
+
+        logger.info(f"Order {order_id} rated {rating_data.rating} stars by user {current_user.id}")
+
+        return {
+            "message": "Rating submitted successfully",
+            "rating": rating_data.rating,
+            "order_id": order_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error submitting rating: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to submit rating"
+        )
+
+
+async def update_delivery_partner_rating(
+    db: DatabaseManager,
+    partner_id: str,
+    new_rating: int
+):
+    """Helper function to update delivery partner's average rating"""
+    try:
+        # Get all completed orders for this partner
+        orders = await db.find_many(
+            "orders",
+            {
+                "delivery_partner": partner_id,
+                "rating": {"$exists": True, "$ne": None}
+            }
+        )
+
+        if orders:
+            total_rating = sum(order.get("rating", 0) for order in orders)
+            avg_rating = total_rating / len(orders)
+
+            # Update partner's rating in users collection
+            await db.update_one(
+                "users",
+                {"id": partner_id},
+                {
+                    "$set": {
+                        "rating": round(avg_rating, 2),
+                        "total_deliveries": len(orders)
+                    }
+                }
+            )
+    except Exception as e:
+        logger.error(f"Error updating delivery partner rating: {str(e)}")
