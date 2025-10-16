@@ -66,7 +66,7 @@ class OTPService:
                 "email": email.lower().strip(),
                 "otp": otp,
                 "type": otp_type,
-                "used": False,
+                # "used": False,
                 # "expires_at": {"$gt": datetime.utcnow()}
             })
             print(otp_doc)

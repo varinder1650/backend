@@ -1,7 +1,7 @@
 from datetime import datetime
 # from bson import ObjectId
 from db.db_manager import DatabaseManager
-from schema.order import OrderCreate
+from schema.order import DeliveryAddress, OrderCreate
 
 
 class OrderService:
@@ -14,7 +14,7 @@ class OrderService:
 
         if not order_data.get('delivery_address'):
             raise ValueError("address not found")
-
+        
         if not order_data.get('total_amount') or order_data['total_amount'] <= 0:
             raise ValueError("valid total amount is required")
         
