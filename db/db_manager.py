@@ -77,6 +77,17 @@ class DatabaseManager:
         except Exception as e:
             raise e
 
+    async def delete_many(self, collection_name: str, filter_dict: dict):
+        """Delete multiple documents matching filter"""
+        try:
+            collection = self.db[collection_name]
+            result = await collection.delete_many(filter_dict)
+            logger.info(f"Deleted {result.deleted_count} documents from {collection_name}")
+            return result.deleted_count
+        except Exception as e:
+            logger.error(f"Error deleting many in {collection_name}: {e}")
+            raise
+
     async def aggregate(self,collection:str, pipeline:List[Dict[str,Any]]):
         try:
             cursor = self.db[collection].aggregate(pipeline)
