@@ -30,6 +30,9 @@ class DeliveryAddress(BaseModel):
     city: str
     state: str
     pincode: str
+    phone: str
+    latitude: float 
+    longitude:float
 
 
 class StatusChange(BaseModel):
