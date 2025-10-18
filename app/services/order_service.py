@@ -21,6 +21,7 @@ class OrderService:
         order_data['user'] = current_user.id
         order_data['accepted_partners'] = []
         
+        # print(order_data)
         try:
             validated_order = OrderCreate(**order_data)
         except Exception as Validation_error:

@@ -13,6 +13,7 @@ from schema.order import OrderResponse, OrderResponseEnhanced, OrderRating
 from schema.user import UserinDB
 from app.utils.mongo import fix_mongo_types
 from app.utils.id_generator import get_id_generator
+from pydantic import BaseModel, Field
 
 id_generator = get_id_generator()
 
@@ -30,6 +31,7 @@ async def create_order(
         logger.info(f"Order creation request from user: {current_user.email}")
         logger.info(f"Order data received: {order_data}")
         
+        # print(order_data)
         order_service = OrderService(db)
         custom_id = await id_generator.generate_order_id(current_user.id)
         order_id = await order_service.create_order(order_data, current_user, custom_id)
@@ -245,12 +247,8 @@ async def get_active_order(
     current_user = Depends(get_current_user),
     db: DatabaseManager = Depends(get_database)
 ) -> Optional[dict]:
-    """
-    Get user's most recent active order (single order)
-    Returns only the most recent order that's actively being processed
-    """
+    """Get user's most recent active order"""
     try:
-        # Handle case when user is not authenticated
         if not current_user:
             logger.info("No authenticated user found")
             return None
@@ -273,8 +271,25 @@ async def get_active_order(
             logger.info(f"No active order found for user {current_user.email}")
             return None
         
-        # Get the first (most recent) order
         order = orders[0]
+        
+        # ✅ Populate product details for each item
+        if "items" in order and isinstance(order["items"], list):
+            for item in order["items"]:
+                try:
+                    product_id = item.get('product')
+                    if product_id:
+                        product = await db.find_one("products", {"id": product_id})
+                        if product:
+                            item["product_name"] = product.get("name", "Unknown Product")
+                            item["product_image"] = product.get("images", [])
+                        else:
+                            item["product_name"] = "Product not found"
+                            item["product_image"] = []
+                except Exception as item_error:
+                    logger.error(f"Error populating product: {item_error}")
+                    item["product_name"] = "Error loading product"
+                    item["product_image"] = []
         
         # Get delivery partner info if assigned
         if order.get('delivery_partner'):
@@ -293,7 +308,7 @@ async def get_active_order(
             except Exception as partner_error:
                 logger.warning(f"Error fetching delivery partner: {partner_error}")
         
-        # Add status message based on current status
+        # Add status message
         if not order.get("status_message"):
             status_messages = {
                 "confirmed": "Your order has been confirmed and will be prepared soon.",
@@ -307,14 +322,9 @@ async def get_active_order(
                 "Your order is being processed."
             )
         
-        for item in order.get('items', []):
-            product = await db.find_one('products', {"id": item['product']})
-            if product:
-                item['product_name'] = product['name']
-        
-        # Serialize and return single order
+        # Serialize and return
         serialized_order = fix_mongo_types(order)
-        logger.info(f"Returning active order {serialized_order.get('id')} with status: {order['order_status']}")
+        logger.info(f"Returning active order {serialized_order.get('id')} with {len(order.get('items', []))} items")
         
         return serialized_order
         
@@ -328,7 +338,6 @@ async def get_active_order(
             status_code=500, 
             detail="Failed to fetch active order"
         )
-
 
 @router.post('/{order_id}/rate')
 async def rate_order(
@@ -438,3 +447,71 @@ async def update_delivery_partner_rating(
             )
     except Exception as e:
         logger.error(f"Error updating delivery partner rating: {str(e)}")
+
+class AddTip(BaseModel):
+    tip_amount: int = Field(..., ge=1, le=500)
+    order_id: str
+
+@router.post('/{order_id}/add-tip')
+async def add_tip_to_order(
+    order_id: str,
+    tip_data: AddTip,
+    current_user: UserinDB = Depends(current_active_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """Add tip for delivery partner"""
+    try:
+        # Find the order
+        order = await db.find_one(
+            "orders",
+            {"id": order_id, "user": current_user.id}
+        )
+
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found"
+            )
+
+        # Check if order is in valid state for tip
+        if order.get("order_status") not in ['assigning', 'assigned', 'out_for_delivery']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only add tip to active orders"
+            )
+
+        # Check if tip already added
+        if order.get("tip_amount"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tip already added to this order"
+            )
+
+        # Update order with tip
+        await db.update_one(
+            "orders",
+            {"id": order_id},
+            {
+                "$set": {
+                    "tip_amount": tip_data.tip_amount,
+                    "tip_added_at": datetime.utcnow()
+                }
+            }
+        )
+
+        logger.info(f"Tip of ₹{tip_data.tip_amount} added to order {order_id}")
+
+        return {
+            "message": "Tip added successfully",
+            "tip_amount": tip_data.tip_amount,
+            "order_id": order_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding tip: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to add tip"
+        )
