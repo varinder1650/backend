@@ -142,7 +142,7 @@ async def get_assigned_orders_for_delivery(
             except Exception as order_error:
                 logger.error(f"Error processing order {order.get('id')}: {order_error}")
                 continue
-        
+            # print(enhanced_orders)
         logger.info(f"Returning {len(enhanced_orders)} assigned orders for delivery partner {current_user.id}")
         return enhanced_orders
         
@@ -351,16 +351,16 @@ async def mark_order_as_delivered(
                 detail="Access denied. Only delivery partners can mark orders as delivered."
             )
         # Validate order_id
-        try:
-            order_object_id = order_id
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid order ID format"
-            )
+        # try:
+        #     order_object_id = order_id
+        # except Exception:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail="Invalid order ID format"
+        #     )
         # Check if order exists and is assigned to this delivery partner
         order = await db.find_one("orders", {
-            "id": order_object_id,
+            "id": order_id,
             "delivery_partner": current_user.id
         })
       

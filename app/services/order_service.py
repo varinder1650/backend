@@ -2,7 +2,10 @@ from datetime import datetime
 # from bson import ObjectId
 from db.db_manager import DatabaseManager
 from schema.order import DeliveryAddress, OrderCreate
+import pytz
 
+# Define IST timezone
+ist = pytz.timezone('Asia/Kolkata')
 
 class OrderService:
     def __init__(self,db:DatabaseManager):
@@ -47,7 +50,7 @@ class OrderService:
         order_dict["user"] = current_user.id
         order_dict["status_change_history"] = [{
             "status": "preparing",
-            "changed_at": datetime.utcnow(),
+            "changed_at": datetime.now(ist),  # Current time in IST
             "changed_by": current_user.name or "Customer"
         }]
         # Ensure created_at and updated_at are set
@@ -57,6 +60,7 @@ class OrderService:
         order_dict["updated_at"] = order_dict.get("updated_at", now)
         order_dict["promo_code"] = order_data['promo_code']
         order_dict["promo_discount"] = order_data['promo_discount']
+        order_dict["estimated_delivery_time"] = 30
         # print("order data: ", order_dict)
         order_id = await self.db.insert_one("orders", order_dict)
         
