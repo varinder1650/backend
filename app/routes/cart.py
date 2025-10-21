@@ -43,7 +43,7 @@ async def add_to_cart(
 ):
     product_id = req.productId
     quantity = req.quantity
-    # print(product_id)
+    
     try:
         logger.info(f"Adding product {product_id} to cart for user {current_user.email}")
         
@@ -53,38 +53,34 @@ async def add_to_cart(
                 detail="Invalid product ID"
             )
         
-        # Get services
-        redis = get_redis()
-        inventory_service = get_inventory_service()
+        # ✅ Check real-time stock with atomic query
+        product = await db.find_one("products", {
+            "id": product_id,
+            "is_active": True,
+            "stock": {"$gte": quantity}  # ✅ Only fetch if stock is sufficient
+        })
         
-        # Check real-time stock availability
-        try:
-            available_stock = await inventory_service.get_available_stock(product_id)
+        if not product:
+            # Check if product exists at all
+            product_check = await db.find_one("products", {"id": product_id})
             
-            if available_stock < quantity:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Only {available_stock} items available in stock"
-                )
-        except Exception as stock_error:
-            logger.warning(f"Inventory service error, falling back to DB: {stock_error}")
-            # Fallback to database stock check
-            product = await db.find_one("products", {
-                "id": product_id,
-                "is_active": True
-            })
-            
-            if not product:
+            if not product_check:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Product not found"
                 )
-                
-            if product['stock'] < quantity:
+            
+            if not product_check.get("is_active", False):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Not enough stock available"
+                    detail="Product is not available"
                 )
+            
+            # Stock insufficient
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Only {product_check.get('stock', 0)} items available in stock"
+            )
         
         # Find or create cart
         cart = await db.find_one("carts", {"user": current_user.id})
@@ -112,10 +108,18 @@ async def add_to_cart(
                 if item["product"] == product_id:
                     existing_item = item
                     break
-                    
+            
             if existing_item:
-                # Update quantity
-                existing_item["quantity"] += quantity
+                # ✅ Check if new total quantity exceeds stock
+                new_quantity = existing_item["quantity"] + quantity
+                
+                if product.get("stock", 0) < new_quantity:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Cannot add {quantity} more. Only {product.get('stock', 0)} items available in stock (you already have {existing_item['quantity']} in cart)"
+                    )
+                
+                existing_item["quantity"] = new_quantity
                 existing_item["updated_at"] = datetime.utcnow()
             else:
                 # Add new item
@@ -142,6 +146,7 @@ async def add_to_cart(
         
         # Invalidate cart cache
         try:
+            redis = get_redis()
             cache_key = f"cart:{current_user.id}"
             await redis.delete(cache_key)
             logger.info(f"Invalidated cart cache: {cache_key}")
@@ -168,7 +173,7 @@ async def add_to_cart(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to add to cart"
         )
-
+        
 @router.get("/")
 async def get_cart(
     current_user: UserinDB = Depends(current_active_user),

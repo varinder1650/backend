@@ -50,7 +50,7 @@ class DatabaseManager:
                 result = await self.db[collection].update_one(filter_dict, update_dict)
             else:
                 result = await self.db[collection].update_one(filter_dict, {"$set": update_dict})
-            return result.modified_count > 0
+            return result
         except Exception as e:
             raise e
     

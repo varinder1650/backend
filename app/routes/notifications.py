@@ -9,6 +9,7 @@ from app.utils.mongo import fix_mongo_types
 from db.db_manager import DatabaseManager, get_database
 from schema.user import UserinDB
 from pydantic import BaseModel, Field
+from app.utils.get_time import get_ist_datetime_for_db
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -47,15 +48,19 @@ async def create_notification(
     Used internally by other endpoints
     """
     try:
+        current_time = get_ist_datetime_for_db()
+
         notification_data = {
             "user_id": user_id,
             "title": title,
             "message": message,
             "type": notification_type,
             "order_id": order_id,
+            "for":'specific_user',
             "read": False,
             "read_at": None,
-            "created_at": datetime.utcnow()
+            "created_at": current_time['ist'],
+            "created_at_ist": current_time['ist_string']
         }
         
         result = await db.insert_one("notifications", notification_data)
@@ -65,8 +70,6 @@ async def create_notification(
         logger.error(f"Error creating notification: {str(e)}")
         raise
 
-
-# Get all notifications for current user
 @router.get('/')
 async def get_notifications(
     skip: int = 0,
@@ -80,12 +83,17 @@ async def get_notifications(
     try:
         notifications = await db.find_many(
             "notifications",
-            {"user_id": current_user.id},
+            {
+                "$or": [
+                    {"user_id": current_user.id, "for": "specific_user"},
+                    {"for": "all_users"}
+                ]
+            },
             sort=[("created_at", -1)],
             skip=skip,
             limit=limit
         )
-        # print(notifications)
+
         fixed_notifications = [fix_mongo_types(notif) for notif in notifications]
 
         return {
@@ -95,8 +103,9 @@ async def get_notifications(
                     "title": notif["title"],
                     "message": notif["message"],
                     "type": notif["type"],
-                    "read": notif.get("read", False),
-                    "created_at": notif["created_at"].isoformat() if isinstance(notif["created_at"], datetime) else notif["created_at"],
+                    "for": notif.get("for", "specific_user"),
+                    "read": notif.get("read", False) if notif.get("for") == "specific_user" else False,
+                    "created_at": notif.get("created_at") or notif["created_at"].isoformat(),  # ✅ Use IST string
                     "order_id": notif.get("order_id")
                 }
                 for notif in fixed_notifications
@@ -108,7 +117,6 @@ async def get_notifications(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch notifications"
         )
-
 
 # Mark notification as read
 @router.put('/{notification_id}/read')
@@ -123,7 +131,13 @@ async def mark_notification_as_read(
     try:
         notification = await db.find_one(
             "notifications",
-            {"_id": ObjectId(notification_id), "user_id": current_user.id}
+            {
+                "_id": ObjectId(notification_id),
+                "$or": [
+                    {"user_id": current_user.id, "for": "specific_user"},
+                    {"for": "all_users"}
+                ]
+            },
         )
 
         if not notification:
@@ -131,17 +145,20 @@ async def mark_notification_as_read(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Notification not found"
             )
+        if notification['for'] == 'specific_user':
+            current_time = get_ist_datetime_for_db()
 
-        await db.update_one(
-            "notifications",
-            {"_id": ObjectId(notification_id)},
-            {
-                "$set": {
-                    "read": True,
-                    "read_at": datetime.utcnow()
+            await db.update_one(
+                "notifications",
+                {"_id": ObjectId(notification_id)},
+                {
+                    "$set": {
+                        "read": True,
+                        "read_at":current_time['ist'],
+                        "read_at_ist": current_time('ist_string')
+                    }
                 }
-            }
-        )
+            )
 
         return {
             "message": "Notification marked as read",
@@ -158,35 +175,35 @@ async def mark_notification_as_read(
 
 
 # Mark all notifications as read
-@router.put('/read-all')
-async def mark_all_notifications_as_read(
-    current_user: UserinDB = Depends(current_active_user),
-    db: DatabaseManager = Depends(get_database)
-):
-    """
-    Mark all notifications as read for the current user
-    """
-    try:
-        await db.update_many(
-            "notifications",
-            {"user_id": current_user.id, "read": False},
-            {
-                "$set": {
-                    "read": True,
-                    "read_at": datetime.utcnow()
-                }
-            }
-        )
+# @router.put('/read-all')
+# async def mark_all_notifications_as_read(
+#     current_user: UserinDB = Depends(current_active_user),
+#     db: DatabaseManager = Depends(get_database)
+# ):
+#     """
+#     Mark all notifications as read for the current user
+#     """
+#     try:
+#         await db.update_many(
+#             "notifications",
+#             {"user_id": current_user.id, "read": False},
+#             {
+#                 "$set": {
+#                     "read": True,
+#                     "read_at": datetime.utcnow()
+#                 }
+#             }
+#         )
 
-        return {
-            "message": "All notifications marked as read"
-        }
-    except Exception as e:
-        logger.error(f"Error marking all notifications as read: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to mark all notifications as read"
-        )
+#         return {
+#             "message": "All notifications marked as read"
+#         }
+#     except Exception as e:
+#         logger.error(f"Error marking all notifications as read: {str(e)}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to mark all notifications as read"
+#         )
 
 
 # Get unread count
@@ -201,7 +218,13 @@ async def get_unread_count(
     try:
         count = await db.count_documents(
             "notifications",
-            {"user_id": current_user.id, "read": False}
+            {
+                "read": False,
+                "$or": [
+                        {"user_id": current_user.id, "for": "specific_user"},
+                        {"for": "all_users"}
+                    ]
+            }
         )
 
         return {

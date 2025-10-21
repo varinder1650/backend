@@ -14,6 +14,7 @@ from schema.user import UserinDB
 from app.utils.mongo import fix_mongo_types
 from app.utils.id_generator import get_id_generator
 from pydantic import BaseModel, Field
+from app.utils.get_time import get_ist_datetime_for_db,utc_to_ist
 
 id_generator = get_id_generator()
 
@@ -213,7 +214,7 @@ async def send_order_confirmation_email(order: dict, email: str, customer_name: 
                 for item in order.get('items', [])
             ],
             'total_amount': order.get('total_amount', 0),
-            'estimated_delivery': order.get('estimated_delivery_time', '30-40 minutes'),
+            'estimated_delivery': order.get('estimated_delivery_time', '30 minutes'),
             'restaurant_name': order.get('restaurant_name', 'Restaurant'),
             'delivery_address': order.get('delivery_address', {}).get('address', 'N/A')
         }
@@ -326,6 +327,8 @@ async def get_active_order(
         serialized_order = fix_mongo_types(order)
         logger.info(f"Returning active order {serialized_order.get('id')} with {len(order.get('items', []))} items")
         
+        # serialized_order['assigned_at'] = utc_to_ist(serialized_order['assigned_at'])
+        # print(serialized_order['assigned_at'])
         return serialized_order
         
     except HTTPException:
@@ -374,7 +377,7 @@ async def rate_order(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Order has already been rated"
             )
-
+        current_time = get_ist_datetime_for_db()
         # Update order rating
         await db.update_one(
             "orders",
@@ -383,7 +386,7 @@ async def rate_order(
                 "$set": {
                     "rating": rating_data.rating,
                     "review": rating_data.review,
-                    "rated_at": datetime.utcnow()
+                    "rated_at": current_time['ist_string']
                 }
             }
         )
@@ -487,6 +490,7 @@ async def add_tip_to_order(
                 detail="Tip already added to this order"
             )
 
+        current_time = get_ist_datetime_for_db()
         # Update order with tip
         await db.update_one(
             "orders",
@@ -494,7 +498,7 @@ async def add_tip_to_order(
             {
                 "$set": {
                     "tip_amount": tip_data.tip_amount,
-                    "tip_added_at": datetime.utcnow()
+                    "tip_added_at": current_time('ist_string')
                 }
             }
         )
