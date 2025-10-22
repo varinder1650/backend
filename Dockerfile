@@ -1,5 +1,10 @@
-# Dockerfile for SmartBag Backend - Optimized for Render.com
-FROM python:3.12-slim
+# Dockerfile
+# ============================================
+# Multi-stage build for optimized production image
+# ============================================
+
+# Stage 1: Builder
+FROM python:3.11-slim as builder
 
 # Set working directory
 WORKDIR /app
@@ -8,36 +13,47 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    curl \
+    make \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (for better caching)
+# Copy requirements
 COPY requirements.txt .
 
-# Create and activate virtual environment
-RUN python -m venv /app/venv
+# Install Python dependencies
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Activate virtual environment and install Python dependencies
-ENV PATH="/app/venv/bin:$PATH"
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Stage 2: Runtime
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH=/root/.local/bin:$PATH
+
+# Create app user for security
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app && \
+    chown -R appuser:appuser /app
+
+# Set working directory
+WORKDIR /app
+
+# Copy Python dependencies from builder
+COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 
 # Copy application code
-COPY . .
-
-# Create non-root user for security
-RUN useradd -m -u 1000 smartbag && \
-    chown -R smartbag:smartbag /app
+COPY --chown=appuser:appuser . .
 
 # Switch to non-root user
-USER smartbag
+USER appuser
 
-# Expose port (Render assigns PORT env variable)
+# Expose port
 EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
 
-# Start application
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --log-level info
+# Run application
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

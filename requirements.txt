@@ -1,22 +1,105 @@
-fastapi
-uvicorn[standard]
-python-multipart
-python-jose[cryptography]
-pydantic-settings
-pymongo==4.9.1
-motor==3.6.0
-pydantic[email]
-slowapi
-httpx
-pyjwt
-cloudinary
-numpy
-redis[async]>=5.0.0
-aioredis
-elasticsearch[async]>=8.0.0
-celery>=5.3.0
-flower>=2.0.0
-prometheus-client>=0.19.0
-structlog
-bcrypt==4.0.1
-passlib==1.7.4
+# fastapi
+# uvicorn[standard]
+# python-multipart
+# python-jose[cryptography]
+# pydantic-settings
+# pymongo==4.9.1
+# motor==3.6.0
+# pydantic[email]
+# slowapi
+# httpx
+# pyjwt
+# cloudinary
+# numpy
+# redis[async]>=5.0.0
+# aioredis
+# elasticsearch[async]>=8.0.0
+# celery>=5.3.0
+# flower>=2.0.0
+# prometheus-client>=0.19.0
+# structlog
+# bcrypt==4.0.1
+# passlib==1.7.4
+
+# requirements.txt
+# ============================================
+# SmartBag Production Dependencies
+# ============================================
+
+# Core Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Database
+motor==3.3.2  # Async MongoDB driver
+pymongo==4.6.1
+
+# Caching & Performance
+redis==5.0.1
+hiredis==2.3.2  # C parser for Redis (faster)
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+bcrypt==4.1.2
+
+# Email
+aiosmtplib==3.0.1
+
+# Environment & Config
+python-dotenv==1.0.0
+
+# Timezone Handling
+pytz==2023.3
+
+# HTTP Client
+httpx==0.26.0
+
+# Input Validation & Sanitization
+bleach==6.1.0
+email-validator==2.1.0
+
+# JSON Optimization
+orjson==3.9.12  # Fast JSON serialization
+
+# Search (Optional)
+elasticsearch[async]==8.11.1
+
+# Background Tasks (Optional)
+# celery==5.3.4
+# celery[redis]==5.3.4
+
+# Fuzzy Search
+rapidfuzz==3.6.1
+
+# Excel/CSV Processing
+openpyxl==3.1.2
+pandas==2.1.4
+xlrd==2.0.1
+
+# Monitoring & Logging
+structlog==23.2.0
+
+# Development Dependencies
+pytest==7.4.3
+pytest-asyncio==0.23.2
+httpx==0.26.0  # For testing
+faker==22.0.0  # Generate test data
+
+# Production Server
+gunicorn==21.2.0  # For production deployment
+
+# Image Processing (Optional)
+# Pillow==10.1.0
+
+# Rate Limiting
+slowapi==0.1.9
+
+# CORS
+# Already included in fastapi
+
+# Compression
+brotli==1.1.0

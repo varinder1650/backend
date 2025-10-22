@@ -243,12 +243,111 @@ async def update_inventory_after_order(items: list, db: DatabaseManager):
     except Exception as e:
         logger.error(f"Inventory update failed: {e}")
 
+# @router.get("/active")
+# async def get_active_order(
+#     current_user = Depends(get_current_user),
+#     db: DatabaseManager = Depends(get_database)
+# ) -> Optional[dict]:
+#     """Get user's most recent active order"""
+#     try:
+#         if not current_user:
+#             logger.info("No authenticated user found")
+#             return None
+            
+#         logger.info(f"Fetching active order for user: {current_user.email}")
+        
+#         orders = await db.find_many(
+#             "orders",
+#             {
+#                 "user": current_user.id,
+#                 "order_status": {
+#                     "$in": ["confirmed", "assigning", "preparing", "assigned", "out_for_delivery", "arrived", "delivered"]
+#                 }
+#             },
+#             sort=[("created_at", -1)],
+#             limit=1
+#         )
+        
+#         if not orders or len(orders) == 0:
+#             logger.info(f"No active order found for user {current_user.email}")
+#             return None
+        
+#         order = orders[0]
+        
+#         # ✅ Populate product details for each item
+#         if "items" in order and isinstance(order["items"], list):
+#             for item in order["items"]:
+#                 try:
+#                     product_id = item.get('product')
+#                     if product_id:
+#                         product = await db.find_one("products", {"id": product_id})
+#                         if product:
+#                             item["product_name"] = product.get("name", "Unknown Product")
+#                             item["product_image"] = product.get("images", [])
+#                         else:
+#                             item["product_name"] = "Product not found"
+#                             item["product_image"] = []
+#                 except Exception as item_error:
+#                     logger.error(f"Error populating product: {item_error}")
+#                     item["product_name"] = "Error loading product"
+#                     item["product_image"] = []
+        
+#         # Get delivery partner info if assigned
+#         if order.get('delivery_partner'):
+#             try:
+#                 partner = await db.find_one(
+#                     "users",
+#                     {"id": order["delivery_partner"]}
+#                 )
+#                 if partner:
+#                     order["delivery_partner"] = {
+#                         "name": partner.get("name"),
+#                         "phone": partner.get("phone"),
+#                         "rating": partner.get("rating", 4.5),
+#                         "deliveries": partner.get("total_deliveries", 0)
+#                     }
+#             except Exception as partner_error:
+#                 logger.warning(f"Error fetching delivery partner: {partner_error}")
+        
+#         # Add status message
+#         if not order.get("status_message"):
+#             status_messages = {
+#                 "confirmed": "Your order has been confirmed and will be prepared soon.",
+#                 "preparing": "We are preparing your order",
+#                 "assigned": "Delivery Partner Assigned",
+#                 "out_for_delivery": "Your order is on its way to you.",
+#                 "arrived": "Delivery partner has arrived at your location!"
+#             }
+#             order["status_message"] = status_messages.get(
+#                 order["order_status"], 
+#                 "Your order is being processed."
+#             )
+        
+#         # Serialize and return
+#         serialized_order = fix_mongo_types(order)
+#         logger.info(f"Returning active order {serialized_order.get('id')} with {len(order.get('items', []))} items")
+        
+#         # serialized_order['assigned_at'] = utc_to_ist(serialized_order['assigned_at'])
+#         # print(serialized_order['assigned_at'])
+#         return serialized_order
+        
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error fetching active order: {e}")
+#         import traceback
+#         logger.error(traceback.format_exc())
+#         raise HTTPException(
+#             status_code=500, 
+#             detail="Failed to fetch active order"
+#         )
+
 @router.get("/active")
 async def get_active_order(
     current_user = Depends(get_current_user),
     db: DatabaseManager = Depends(get_database)
 ) -> Optional[dict]:
-    """Get user's most recent active order"""
+    """Get user's most recent active order with caching"""
     try:
         if not current_user:
             logger.info("No authenticated user found")
@@ -256,48 +355,79 @@ async def get_active_order(
             
         logger.info(f"Fetching active order for user: {current_user.email}")
         
-        orders = await db.find_many(
-            "orders",
+        # ✅ Add Redis caching for active orders
+        from app.cache.redis_manager import get_redis
+        redis = get_redis()
+        cache_key = f"active_order:{current_user.id}"
+        
+        # Check cache first
+        try:
+            cached_order = await redis.get(cache_key, use_l1=True)
+            if cached_order:
+                logger.info(f"⚡ Active order cache HIT for {current_user.id}")
+                return cached_order
+        except Exception as cache_error:
+            logger.warning(f"Cache read error: {cache_error}")
+        
+        # ✅ Optimized aggregation - populate products in single query
+        pipeline = [
             {
-                "user": current_user.id,
-                "order_status": {
-                    "$in": ["confirmed", "assigning", "preparing", "assigned", "out_for_delivery", "arrived", "delivered"]
+                "$match": {
+                    "user": current_user.id,
+                    "order_status": {
+                        "$in": ["confirmed", "assigning", "preparing", "assigned", "out_for_delivery", "arrived"]
+                    }
                 }
             },
-            sort=[("created_at", -1)],
-            limit=1
-        )
+            {"$sort": {"created_at": -1}},
+            {"$limit": 1},
+            {
+                "$lookup": {
+                    "from": "products",
+                    "let": {"item_products": "$items.product"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$in": ["$id", "$$item_products"]}}}
+                    ],
+                    "as": "product_details"
+                }
+            }
+        ]
+        
+        orders = await db.aggregate("orders", pipeline)
         
         if not orders or len(orders) == 0:
             logger.info(f"No active order found for user {current_user.email}")
+            # Cache the null result briefly
+            await redis.set(cache_key, None, 30)
             return None
         
         order = orders[0]
         
-        # ✅ Populate product details for each item
-        if "items" in order and isinstance(order["items"], list):
-            for item in order["items"]:
-                try:
-                    product_id = item.get('product')
-                    if product_id:
-                        product = await db.find_one("products", {"id": product_id})
-                        if product:
-                            item["product_name"] = product.get("name", "Unknown Product")
-                            item["product_image"] = product.get("images", [])
-                        else:
-                            item["product_name"] = "Product not found"
-                            item["product_image"] = []
-                except Exception as item_error:
-                    logger.error(f"Error populating product: {item_error}")
-                    item["product_name"] = "Error loading product"
+        # ✅ Map products to items efficiently
+        if "product_details" in order:
+            product_map = {p["id"]: p for p in order["product_details"]}
+            
+            for item in order.get("items", []):
+                product_id = item.get('product')
+                product = product_map.get(product_id)
+                
+                if product:
+                    item["product_name"] = product.get("name", "Unknown Product")
+                    item["product_image"] = product.get("images", [])
+                else:
+                    item["product_name"] = "Product not found"
                     item["product_image"] = []
+            
+            # Remove product_details from response
+            del order["product_details"]
         
         # Get delivery partner info if assigned
         if order.get('delivery_partner'):
             try:
                 partner = await db.find_one(
                     "users",
-                    {"id": order["delivery_partner"]}
+                    {"id": order["delivery_partner"]},
+                    projection={"name": 1, "phone": 1, "rating": 1, "total_deliveries": 1}  # ✅ Only get needed fields
                 )
                 if partner:
                     order["delivery_partner"] = {
@@ -323,12 +453,18 @@ async def get_active_order(
                 "Your order is being processed."
             )
         
-        # Serialize and return
+        # Serialize
         serialized_order = fix_mongo_types(order)
-        logger.info(f"Returning active order {serialized_order.get('id')} with {len(order.get('items', []))} items")
         
-        # serialized_order['assigned_at'] = utc_to_ist(serialized_order['assigned_at'])
-        # print(serialized_order['assigned_at'])
+        # ✅ Cache for 30 seconds (active orders change frequently)
+        try:
+            await redis.set(cache_key, serialized_order, 30, use_l1=True)
+            logger.info(f"💾 Cached active order for {current_user.id}")
+        except Exception as cache_error:
+            logger.warning(f"Cache write error: {cache_error}")
+        
+        logger.info(f"✅ Returning active order {serialized_order.get('id')} ({len(order.get('items', []))} items)")
+        
         return serialized_order
         
     except HTTPException:
@@ -498,7 +634,7 @@ async def add_tip_to_order(
             {
                 "$set": {
                     "tip_amount": tip_data.tip_amount,
-                    "tip_added_at": current_time('ist_string')
+                    "tip_added_at": current_time['ist_string']
                 }
             }
         )

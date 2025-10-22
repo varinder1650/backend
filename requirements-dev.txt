@@ -1,0 +1,39 @@
+# requirements-dev.txt
+# ============================================
+# Development & Testing Dependencies
+# ============================================
+
+-r requirements.txt
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.23.2
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+faker==22.0.0
+
+# Code Quality
+black==23.12.1  # Code formatter
+flake8==7.0.0  # Linter
+isort==5.13.2  # Import sorting
+mypy==1.8.0  # Type checking
+pylint==3.0.3
+
+# Security Scanning
+bandit==1.7.6  # Security linter
+safety==2.3.5  # Dependency vulnerability scanner
+
+# Documentation
+mkdocs==1.5.3
+mkdocs-material==9.5.3
+
+# Debugging
+ipdb==0.13.13
+ipython==8.19.0
+
+# Performance Profiling
+py-spy==0.3.14
+memory-profiler==0.61.0
+
+# Load Testing
+locust==2.20.0

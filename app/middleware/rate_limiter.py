@@ -1,58 +1,135 @@
+# app/middleware/rate_limiter.py - COMPLETE REPLACEMENT
 import time
 import logging
+import hashlib
 from datetime import datetime, timedelta
 from collections import defaultdict
 from fastapi import HTTPException, Request, status
 from functools import wraps
 import asyncio
+import os
+from app.cache.redis_manager import get_redis
 
 logger = logging.getLogger(__name__)
 
 class RateLimiter:
     """
-    In-memory rate limiter with sliding window algorithm
-    For production, consider using Redis for distributed rate limiting
+    Advanced rate limiter with Redis backend
+    Supports distributed rate limiting across multiple servers
     """
     
-    def __init__(self):
-        # Store: {client_ip: {endpoint: [(timestamp, count)]}}
-        self.requests = defaultdict(lambda: defaultdict(list))
-        self.cleanup_interval = 300  # Clean old entries every 5 minutes
-        self._last_cleanup = time.time()
-    
-    def _cleanup_old_entries(self):
-        """Remove expired entries to prevent memory leak"""
-        current_time = time.time()
-        if current_time - self._last_cleanup < self.cleanup_interval:
-            return
+    def __init__(self, use_redis: bool = True):
+        self.use_redis = use_redis and os.getenv('ENABLE_RATE_LIMITING', 'true').lower() == 'true'
         
-        cutoff_time = current_time - 3600  # Keep last hour only
-        for ip in list(self.requests.keys()):
-            for endpoint in list(self.requests[ip].keys()):
-                self.requests[ip][endpoint] = [
-                    (ts, count) for ts, count in self.requests[ip][endpoint]
-                    if ts > cutoff_time
-                ]
-                if not self.requests[ip][endpoint]:
-                    del self.requests[ip][endpoint]
-            if not self.requests[ip]:
-                del self.requests[ip]
-        
-        self._last_cleanup = current_time
-        logger.info(f"Rate limiter cleanup completed. Active IPs: {len(self.requests)}")
+        if not self.use_redis:
+            # Fallback to in-memory for development
+            self.requests = defaultdict(lambda: defaultdict(list))
+            self._last_cleanup = time.time()
+            self.cleanup_interval = 300
+        else:
+            self.redis = get_redis()
     
-    def is_rate_limited(
-        self, 
-        client_ip: str, 
-        endpoint: str, 
-        max_requests: int, 
+    def _get_client_identifier(self, request: Request) -> str:
+        """
+        Generate unique client identifier
+        Uses IP + User-Agent to prevent simple bypasses
+        """
+        # Check for proxy headers
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            client_ip = forwarded_for.split(",")[0].strip()
+        else:
+            client_ip = request.client.host if request.client else "unknown"
+        
+        # Add user agent for fingerprinting
+        user_agent = request.headers.get("User-Agent", "")
+        
+        # Create hash for privacy
+        identifier = f"{client_ip}:{user_agent}"
+        return hashlib.sha256(identifier.encode()).hexdigest()[:16]
+    
+    async def is_rate_limited_redis(
+        self,
+        client_id: str,
+        endpoint: str,
+        max_requests: int,
         window_seconds: int
     ) -> tuple[bool, dict]:
         """
-        Check if client has exceeded rate limit
-        Returns: (is_limited, rate_info)
+        Redis-based rate limiting using sliding window
+        More accurate and scalable than fixed window
         """
-        import os
+        try:
+            current_time = int(time.time())
+            window_start = current_time - window_seconds
+            
+            # Redis key for this client+endpoint
+            key = f"rate_limit:{client_id}:{endpoint}"
+            
+            # Use Redis sorted set for sliding window
+            pipe = self.redis.redis.pipeline()
+            
+            # Remove old entries outside window
+            pipe.zremrangebyscore(key, 0, window_start)
+            
+            # Count requests in current window
+            pipe.zcard(key)
+            
+            # Add current request
+            pipe.zadd(key, {str(current_time): current_time})
+            
+            # Set expiry on key
+            pipe.expire(key, window_seconds)
+            
+            # Execute pipeline
+            results = await pipe.execute()
+            
+            request_count = results[1]  # Count before adding current request
+            
+            is_limited = request_count >= max_requests
+            
+            # Calculate retry_after
+            if is_limited:
+                # Get oldest request timestamp
+                oldest = await self.redis.redis.zrange(key, 0, 0, withscores=True)
+                if oldest:
+                    oldest_time = int(oldest[0][1])
+                    retry_after = window_seconds - (current_time - oldest_time)
+                else:
+                    retry_after = window_seconds
+            else:
+                retry_after = 0
+            
+            rate_info = {
+                "limit": max_requests,
+                "remaining": max(0, max_requests - request_count - 1),
+                "reset": current_time + window_seconds,
+                "retry_after": max(0, retry_after)
+            }
+            
+            return is_limited, rate_info
+            
+        except Exception as e:
+            logger.error(f"Redis rate limiting error: {e}")
+            # Fail open - allow request if rate limiting fails
+            return False, {
+                "limit": max_requests,
+                "remaining": max_requests,
+                "reset": int(time.time() + window_seconds),
+                "retry_after": 0
+            }
+    
+    def is_rate_limited_memory(
+        self,
+        client_id: str,
+        endpoint: str,
+        max_requests: int,
+        window_seconds: int
+    ) -> tuple[bool, dict]:
+        """
+        In-memory rate limiting (fallback for development)
+        """
+        # Testing environment bypass
         if os.getenv('ENVIRONMENT') == 'Testing':
             return False, {
                 "limit": max_requests,
@@ -66,28 +143,28 @@ class RateLimiter:
         current_time = time.time()
         window_start = current_time - window_seconds
         
-        # Get requests within the time window
-        endpoint_requests = self.requests[client_ip][endpoint]
+        # Get requests within window
+        endpoint_requests = self.requests[client_id][endpoint]
         
-        # Remove old requests outside the window
+        # Remove old requests
         valid_requests = [
             (ts, count) for ts, count in endpoint_requests
             if ts > window_start
         ]
-        self.requests[client_ip][endpoint] = valid_requests
+        self.requests[client_id][endpoint] = valid_requests
         
-        # Calculate total requests in window
+        # Calculate total requests
         total_requests = sum(count for _, count in valid_requests)
         
-        # Check if limit exceeded
+        # Check if limited
         is_limited = total_requests >= max_requests
         
         if not is_limited:
             # Add current request
-            self.requests[client_ip][endpoint].append((current_time, 1))
+            self.requests[client_id][endpoint].append((current_time, 1))
             total_requests += 1
         
-        # Calculate retry after time
+        # Calculate retry_after
         if valid_requests:
             oldest_request_time = valid_requests[0][0]
             retry_after = int(window_seconds - (current_time - oldest_request_time))
@@ -102,17 +179,53 @@ class RateLimiter:
         }
         
         return is_limited, rate_info
+    
+    async def is_rate_limited(
+        self,
+        client_id: str,
+        endpoint: str,
+        max_requests: int,
+        window_seconds: int
+    ) -> tuple[bool, dict]:
+        """
+        Check rate limit using Redis or memory backend
+        """
+        if self.use_redis:
+            return await self.is_rate_limited_redis(
+                client_id, endpoint, max_requests, window_seconds
+            )
+        else:
+            return self.is_rate_limited_memory(
+                client_id, endpoint, max_requests, window_seconds
+            )
+    
+    def _cleanup_old_entries(self):
+        """Clean up old in-memory entries"""
+        current_time = time.time()
+        if current_time - self._last_cleanup < self.cleanup_interval:
+            return
+        
+        cutoff_time = current_time - 3600
+        for client_id in list(self.requests.keys()):
+            for endpoint in list(self.requests[client_id].keys()):
+                self.requests[client_id][endpoint] = [
+                    (ts, count) for ts, count in self.requests[client_id][endpoint]
+                    if ts > cutoff_time
+                ]
+                if not self.requests[client_id][endpoint]:
+                    del self.requests[client_id][endpoint]
+            if not self.requests[client_id]:
+                del self.requests[client_id]
+        
+        self._last_cleanup = current_time
+        logger.info(f"✅ Rate limiter cleanup completed. Active clients: {len(self.requests)}")
 
 # Global rate limiter instance
-_rate_limiter = RateLimiter()
+_rate_limiter = RateLimiter(use_redis=True)
 
 def rate_limit(max_requests: int = 100, window_seconds: int = 60):
     """
-    Decorator for rate limiting endpoints
-    
-    Args:
-        max_requests: Maximum number of requests allowed
-        window_seconds: Time window in seconds
+    Decorator for endpoint-specific rate limiting
     
     Usage:
         @router.post("/login")
@@ -133,28 +246,27 @@ def rate_limit(max_requests: int = 100, window_seconds: int = 60):
                 request = kwargs.get('request')
             
             if not request:
-                # If no request object, skip rate limiting
-                logger.warning(f"Rate limiting skipped for {func.__name__}: No Request object found")
+                logger.warning(f"⚠️ Rate limiting skipped for {func.__name__}: No Request object")
                 return await func(*args, **kwargs)
             
-            # Get client IP
-            client_ip = request.client.host if request.client else "unknown"
+            # Get client identifier
+            client_id = _rate_limiter._get_client_identifier(request)
             
-            # Get endpoint path
+            # Get endpoint identifier
             endpoint = f"{request.method}:{request.url.path}"
             
             # Check rate limit
-            is_limited, rate_info = _rate_limiter.is_rate_limited(
-                client_ip, 
-                endpoint, 
-                max_requests, 
+            is_limited, rate_info = await _rate_limiter.is_rate_limited(
+                client_id,
+                endpoint,
+                max_requests,
                 window_seconds
             )
             
             if is_limited:
                 logger.warning(
-                    f"Rate limit exceeded for {client_ip} on {endpoint}. "
-                    f"Limit: {max_requests}/{window_seconds}s"
+                    f"⚠️ Rate limit exceeded: {client_id[:8]}... on {endpoint} "
+                    f"({max_requests}/{window_seconds}s)"
                 )
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -173,10 +285,10 @@ def rate_limit(max_requests: int = 100, window_seconds: int = 60):
                     }
                 )
             
-            # Add rate limit headers to response
+            # Execute endpoint
             response = await func(*args, **kwargs)
             
-            # If response has headers attribute (JSONResponse, etc.)
+            # Add rate limit headers to response if possible
             if hasattr(response, 'headers'):
                 response.headers["X-RateLimit-Limit"] = str(rate_info['limit'])
                 response.headers["X-RateLimit-Remaining"] = str(rate_info['remaining'])
@@ -191,26 +303,28 @@ def rate_limit(max_requests: int = 100, window_seconds: int = 60):
 class GlobalRateLimitMiddleware:
     """
     Global rate limiting middleware for all endpoints
-    Use this in addition to endpoint-specific rate limiting
+    Protects against DDoS and abuse
     """
     
     def __init__(
         self,
-        app,  # ✅ REQUIRED: FastAPI passes app as first argument
-        max_requests: int = 1000,
+        app,
+        max_requests: int = 10000,
         window_seconds: int = 60,
         exclude_paths: list = None
     ):
         self.app = app
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json", "/redoc"]
-        self.rate_limiter = RateLimiter()
+        self.exclude_paths = exclude_paths or [
+            "/health", "/docs", "/openapi.json", "/redoc", "/metrics"
+        ]
+        self.rate_limiter = RateLimiter(use_redis=True)
     
     async def __call__(self, scope, receive, send):
         """ASGI3 middleware interface"""
-        import os
-        if os.getenv('ENVIRONMENT') == 'Testing':
+        # Bypass in testing
+        if os.getenv('ENVIRONMENT') == 'Development':
             await self.app(scope, receive, send)
             return
         
@@ -218,24 +332,24 @@ class GlobalRateLimitMiddleware:
             await self.app(scope, receive, send)
             return
         
-        # Create request object to access path and client
+        # Create request object
         from starlette.requests import Request
         request = Request(scope, receive)
         
-        # Skip rate limiting for excluded paths
+        # Skip excluded paths
         if request.url.path in self.exclude_paths:
             await self.app(scope, receive, send)
             return
         
-        # Get client IP
-        client_ip = request.client.host if request.client else "unknown"
+        # Get client identifier
+        client_id = self.rate_limiter._get_client_identifier(request)
         
         # Global rate limit key
-        endpoint = f"GLOBAL:{client_ip}"
+        endpoint = f"GLOBAL:{client_id}"
         
         # Check rate limit
-        is_limited, rate_info = self.rate_limiter.is_rate_limited(
-            client_ip,
+        is_limited, rate_info = await self.rate_limiter.is_rate_limited(
+            client_id,
             endpoint,
             self.max_requests,
             self.window_seconds
@@ -243,9 +357,10 @@ class GlobalRateLimitMiddleware:
         
         if is_limited:
             logger.warning(
-                f"Global rate limit exceeded for {client_ip}. "
-                f"Limit: {self.max_requests}/{self.window_seconds}s"
+                f"⚠️ Global rate limit exceeded: {client_id[:8]}... "
+                f"({self.max_requests}/{self.window_seconds}s)"
             )
+            
             from starlette.responses import JSONResponse
             response = JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -264,10 +379,9 @@ class GlobalRateLimitMiddleware:
             await response(scope, receive, send)
             return
         
-        # Continue with request processing
+        # Add rate limit headers to response
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
-                # Add rate limit headers
                 headers = list(message.get("headers", []))
                 headers.extend([
                     (b"x-ratelimit-limit", str(rate_info['limit']).encode()),
@@ -278,60 +392,3 @@ class GlobalRateLimitMiddleware:
             await send(message)
         
         await self.app(scope, receive, send_wrapper)
-
-
-# Redis-based rate limiter for production (optional)
-class RedisRateLimiter:
-    """
-    Redis-based rate limiter for distributed systems
-    Requires: redis, aioredis
-    
-    Usage in setup.py:
-        from redis import asyncio as aioredis
-        redis_client = await aioredis.from_url("redis://localhost")
-        rate_limiter = RedisRateLimiter(redis_client)
-    """
-    
-    def __init__(self, redis_client):
-        self.redis = redis_client
-    
-    async def is_rate_limited(
-        self, 
-        client_ip: str, 
-        endpoint: str, 
-        max_requests: int, 
-        window_seconds: int
-    ) -> tuple[bool, dict]:
-        """Check rate limit using Redis"""
-        key = f"rate_limit:{client_ip}:{endpoint}"
-        current_time = int(time.time())
-        window_start = current_time - window_seconds
-        
-        # Use Redis sorted set for sliding window
-        pipe = self.redis.pipeline()
-        
-        # Remove old entries
-        pipe.zremrangebyscore(key, 0, window_start)
-        
-        # Count requests in window
-        pipe.zcard(key)
-        
-        # Add current request
-        pipe.zadd(key, {str(current_time): current_time})
-        
-        # Set expiry
-        pipe.expire(key, window_seconds)
-        
-        results = await pipe.execute()
-        request_count = results[1]
-        
-        is_limited = request_count >= max_requests
-        
-        rate_info = {
-            "limit": max_requests,
-            "remaining": max(0, max_requests - request_count),
-            "reset": current_time + window_seconds,
-            "retry_after": window_seconds if is_limited else 0
-        }
-        
-        return is_limited, rate_info

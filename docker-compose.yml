@@ -1,0 +1,117 @@
+
+# docker-compose.yml
+# ============================================
+# Complete development stack
+# ============================================
+
+version: '3.8'
+
+services:
+  # FastAPI Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartbag_app
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=Development
+      - MONGO_URI=mongodb://mongo:27017
+      - DB_NAME=smartbag_dev
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=your-dev-secret-key-change-in-production
+      - ALGORITHM=HS256
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ENABLE_ELASTICSEARCH=true
+    depends_on:
+      - mongo
+      - redis
+      - elasticsearch
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    networks:
+      - smartbag-network
+
+  # MongoDB
+  mongo:
+    image: mongo:7.0
+    container_name: smartbag_mongo
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=smartbag_dev
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+    networks:
+      - smartbag-network
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: smartbag_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - smartbag-network
+
+  # Elasticsearch (Optional)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: smartbag_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+    networks:
+      - smartbag-network
+
+  # Redis Commander (Redis GUI)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: smartbag_redis_commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - smartbag-network
+
+  # Mongo Express (MongoDB GUI)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: smartbag_mongo_express
+    ports:
+      - "8082:8081"
+    environment:
+      - ME_CONFIG_MONGODB_URL=mongodb://mongo:27017
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin123
+    depends_on:
+      - mongo
+    restart: unless-stopped
+    networks:
+      - smartbag-network
+
+volumes:
+  mongo_data:
+  redis_data:
+  elasticsearch_data:
+
+networks:
+  smartbag-network:
+    driver: bridge

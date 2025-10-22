@@ -1,39 +1,60 @@
+# render.yaml
+# ============================================
+# Render.com deployment configuration
+# ============================================
+
 services:
-  # FastAPI Backend
+  # Web Service
   - type: web
     name: smartbag-api
     env: python
     region: oregon
-    plan: free
+    plan: starter  # Change to 'standard' for production
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
     envVars:
       - key: ENVIRONMENT
         value: Production
-      - key: PYTHON_VERSION
-        value: 3.12.0
       - key: MONGO_URI
-        sync: false
+        sync: false  # Set in Render dashboard
       - key: DB_NAME
-        value: smartbag
+        value: smartbag_production
+      - key: REDIS_URL
+        sync: false  # Set in Render dashboard
       - key: SECRET_KEY
         generateValue: true
       - key: ALGORITHM
         value: HS256
+      - key: BCRYPT_ROUNDS
+        value: 14
+      - key: ALLOWED_ORIGINS
+        value: https://yourdomain.com
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: 1440
-      - key: REFRESH_TOKEN_EXPIRE_DAYS
         value: 30
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: smartbag-redis
-          property: connectionString
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: 7
+      - key: ENABLE_RATE_LIMITING
+        value: true
+      - key: API_RATE_LIMIT_PER_MINUTE
+        value: 1000
+      - key: LOG_LEVEL
+        value: WARNING
+      - key: MAX_CART_ITEMS_PER_PRODUCT
+        value: 100
     healthCheckPath: /health
     
-  # Redis Instance
+  # Redis (Render Redis)
   - type: redis
     name: smartbag-redis
-    ipAllowList: []
-    plan: free
+    region: oregon
+    plan: starter
     maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Allow from all services
+
+# Cron Jobs (Background Tasks)
+jobs:
+  - type: cron
+    name: cleanup-expired-otps
+    schedule: "0 */6 * * *"  # Every 6 hours
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.tasks.cleanup_tasks

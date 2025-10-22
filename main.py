@@ -1,7 +1,7 @@
+# main.py - COMPLETE WORKING VERSION
 from fastapi import FastAPI
 from app.app import create_customer_app
 from contextlib import asynccontextmanager
-# import logging
 import structlog
 from db.db_manager import get_database
 from app.cache.redis_manager import redis_manager
@@ -10,6 +10,7 @@ from app.services.inventory_service import inventory_service
 import os
 from dotenv import load_dotenv
 from datetime import datetime
+import logging
 
 load_dotenv()
 
@@ -24,6 +25,12 @@ structlog.configure(
 )
 
 logger = structlog.get_logger(__name__)
+
+# Configure standard logging
+logging.basicConfig(
+    level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO')),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -41,13 +48,14 @@ async def lifespan(app: FastAPI):
         app.state.redis = redis_manager
         logger.info("✅ Redis connected successfully")
         
-        # Initialize Elasticsearch
-        try:
-            await search_service.init_elasticsearch()
-            app.state.search = search_service
-            logger.info("✅ Elasticsearch connected successfully")
-        except Exception as e:
-            logger.warning(f"⚠️ Elasticsearch connection failed, search will use fallback: {e}")
+        # Initialize Elasticsearch (optional)
+        if os.getenv('ENABLE_ELASTICSEARCH', 'false').lower() == 'true':
+            try:
+                await search_service.init_elasticsearch()
+                app.state.search = search_service
+                logger.info("✅ Elasticsearch connected successfully")
+            except Exception as e:
+                logger.warning(f"⚠️ Elasticsearch connection failed: {e}")
         
         # Initialize inventory cache
         try:
@@ -58,9 +66,10 @@ async def lifespan(app: FastAPI):
         
         # Create database indexes
         await create_indexes(db)
-        logger.info("✅ Database indexes created")
+        logger.info("✅ Database indexes verified")
         
         logger.info("🎉 SmartBag application started successfully")
+        logger.info(f"📍 Environment: {os.getenv('ENVIRONMENT', 'Development')}")
 
     except Exception as e:
         logger.error(f"💥 Failed to initialize application: {str(e)}")
@@ -86,52 +95,60 @@ async def lifespan(app: FastAPI):
     logger.info("👋 SmartBag application shutdown complete")
 
 async def create_indexes(db):
-    """Create optimized database indexes"""
+    """Create optimized database indexes (skip if already exist)"""
     try:
-        # Enhanced indexes for better performance
+        # Helper to create index safely
+        async def safe_create_index(collection, spec, **kwargs):
+            try:
+                await db.db[collection].create_index(spec, **kwargs)
+            except Exception as e:
+                if "already exists" not in str(e).lower():
+                    logger.debug(f"Index note for {collection}: {e}")
         
         # User indexes
-        await db.db['users'].create_index("email", unique=True)
-        await db.db['users'].create_index([("role", 1), ("is_active", 1)])
-        await db.db['users'].create_index("provider")
+        await safe_create_index('users', "email", unique=True)
+        await safe_create_index('users', [("role", 1), ("is_active", 1)])
+        await safe_create_index('users', "provider")
         
-        # Product indexes (optimized for search and filtering)
-        await db.db['products'].create_index([
+        # Product indexes
+        await safe_create_index('products', [
             ("is_active", 1), ("category", 1), ("brand", 1), ("price", 1)
         ])
-        await db.db['products'].create_index([("name", "text"), ("description", "text"), ("keywords", "text")])
-        await db.db['products'].create_index([("created_at", -1)])
-        await db.db['products'].create_index([("rating", -1), ("review_count", -1)])
-        await db.db['products'].create_index("stock")
+        await safe_create_index('products', [
+            ("name", "text"), ("description", "text"), ("keywords", "text")
+        ])
+        await safe_create_index('products', [("created_at", -1)])
+        await safe_create_index('products', [("rating", -1), ("review_count", -1)])
+        await safe_create_index('products', "stock")
         
-        # Order indexes (optimized for history and analytics)
-        await db.db['orders'].create_index([("user", 1), ("created_at", -1)])
-        await db.db['orders'].create_index([("order_status", 1), ("created_at", -1)])
-        await db.db['orders'].create_index([("delivery_partner", 1), ("order_status", 1)])
-        await db.db['orders'].create_index("created_at")
+        # Order indexes
+        await safe_create_index('orders', [("user", 1), ("created_at", -1)])
+        await safe_create_index('orders', [("order_status", 1), ("created_at", -1)])
+        await safe_create_index('orders', [("delivery_partner", 1), ("order_status", 1)])
+        await safe_create_index('orders', "created_at")
         
         # Cart indexes
-        await db.db['carts'].create_index("user", unique=True)
-        await db.db['carts'].create_index("updated_at")
+        await safe_create_index('carts', "user", unique=True)
+        await safe_create_index('carts', "updated_at")
         
         # Address indexes
-        await db.db['user_addresses'].create_index([("user_id", 1), ("is_default", -1)])
+        await safe_create_index('user_addresses', [("user_id", 1), ("is_default", -1)])
         
         # Support ticket indexes
-        await db.db['support_tickets'].create_index([("user_id", 1), ("created_at", -1)])
-        await db.db['support_tickets'].create_index([("status", 1), ("created_at", -1)])
+        await safe_create_index('support_tickets', [("user_id", 1), ("created_at", -1)])
+        await safe_create_index('support_tickets', [("status", 1), ("created_at", -1)])
         
         # Session and token indexes
-        await db.db['refresh_tokens'].create_index("expire", expireAfterSeconds=0)
-        await db.db['password_reset_tokens'].create_index("expires_at", expireAfterSeconds=0)
+        await safe_create_index('refresh_tokens', "expire", expireAfterSeconds=0)
+        await safe_create_index('password_reset_tokens', "expires_at", expireAfterSeconds=0)
         
         # Delivery-specific indexes
-        await db.db['orders'].create_index([("delivery_partner", 1), ("order_status", 1)])
+        await safe_create_index('orders', [("delivery_partner", 1), ("order_status", 1)])
         
-        logger.info("✅ All optimized indexes created successfully")
+        logger.info("✅ All database indexes verified")
         
     except Exception as e:
-        logger.error(f"❌ Error creating indexes: {str(e)}")
+        logger.error(f"❌ Error with indexes: {str(e)}")
 
 # Create main application
 app = FastAPI(
@@ -211,14 +228,14 @@ async def get_metrics():
                 "storage_size": db_stats.get('storageSize', 0)
             },
             "app": {
-                "uptime": "calculated_uptime",  # Implement uptime calculation
-                "version": "2.0.0"
+                "version": "2.0.0",
+                "environment": os.getenv('ENVIRONMENT', 'Development')
             }
         }
     except Exception as e:
         return {"error": str(e)}
 
-ENV = os.getenv('ENVIRONMENT', 'Production')
+ENV = os.getenv('ENVIRONMENT', 'Development')
 
 @app.get("/")
 async def root():
@@ -229,31 +246,9 @@ async def root():
         "status": "running"
     }
 
-# if __name__ == "__main__":
-#     import uvicorn
-    
-#     if ENV == 'Development':
-#         uvicorn.run(
-#             "main:app",
-#             host="0.0.0.0",
-#             port=8000,
-#             reload=True,
-#             log_level="info"
-#         )
-#     else:
-#         uvicorn.run(
-#             "main:app",
-#             host="0.0.0.0", 
-#             port=int(os.getenv('PORT', 8000)),
-#             reload=False,
-#             log_level="warning",
-#             workers=1  # Use 1 worker for now, increase based on server capacity
-#         )
-
 if __name__ == "__main__":
     import uvicorn
     
-    # Render provides PORT environment variable
     port = int(os.getenv('PORT', 8000))
     
     if ENV == 'Development':

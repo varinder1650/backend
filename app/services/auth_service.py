@@ -1,5 +1,5 @@
 from fastapi import HTTPException, status
-from app.utils.auth import create_pasword_hash, get_user, verify_password, create_access_token, create_refresh_token
+from app.utils.auth import create_password_hash_async, get_user, verify_password_async, create_access_token, create_refresh_token
 from db.db_manager import DatabaseManager
 from schema.user import UserCreate
 from bson import ObjectId
@@ -33,7 +33,7 @@ class AuthService:
                 )
             
             # Hash password
-            hashed_password = create_pasword_hash(user_data.password)
+            hashed_password = await create_password_hash_async(user_data.password)
             
             ist_time = get_ist_datetime_for_db()
             # Create user document
@@ -69,8 +69,33 @@ class AuthService:
                 detail=f"Failed to create user: {str(e)}"
             )
 
+    # async def authenticate_user(self, db, username, password):
+    #     """Authenticate user with email and password"""
+    #     try:
+    #         logger.info(f"Authenticating user: {username}")
+    #         auth = await get_user(db, username)
+            
+    #         if not auth:
+    #             logger.warning(f"User {username} not found")
+    #             return None
+                
+    #         if not verify_password(password, auth['hashed_password']):
+    #             logger.warning(f"Invalid password for user {username}")
+    #             return None
+            
+    #         if not auth.get('is_active', True):
+    #             logger.warning("User is inactive")
+    #             return None
+
+    #         logger.info(f"User {username} authenticated successfully")
+    #         return auth
+            
+    #     except Exception as e:
+    #         logger.error(f"Authentication error: {str(e)}")
+    #         return None
+
     async def authenticate_user(self, db, username, password):
-        """Authenticate user with email and password"""
+        """Authenticate with async password verification"""
         try:
             logger.info(f"Authenticating user: {username}")
             auth = await get_user(db, username)
@@ -78,8 +103,11 @@ class AuthService:
             if not auth:
                 logger.warning(f"User {username} not found")
                 return None
-                
-            if not verify_password(password, auth['hashed_password']):
+            
+            # ✅ ASYNC PASSWORD VERIFICATION (was blocking before!)
+            is_valid = await verify_password_async(password, auth['hashed_password'])
+            
+            if not is_valid:
                 logger.warning(f"Invalid password for user {username}")
                 return None
             

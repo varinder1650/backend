@@ -1,0 +1,57 @@
+# docker-compose.prod.yml
+# ============================================
+# Production-optimized stack
+# ============================================
+
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartbag_app_prod
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=Production
+      - MONGO_URI=${MONGO_URI}
+      - DB_NAME=${DB_NAME}
+      - REDIS_URL=${REDIS_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALGORITHM=HS256
+      - BCRYPT_ROUNDS=14
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - ENABLE_RATE_LIMITING=true
+      - LOG_LEVEL=WARNING
+    restart: always
+    networks:
+      - smartbag-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: smartbag_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    restart: always
+    networks:
+      - smartbag-network
+
+networks:
+  smartbag-network:
+    driver: bridge

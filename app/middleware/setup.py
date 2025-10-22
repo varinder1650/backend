@@ -1,212 +1,82 @@
-# from fastapi import FastAPI, Request, HTTPException
-# import logging
-# from fastapi.middleware.cors import CORSMiddleware
-# from fastapi.middleware.gzip import GZipMiddleware
-# from fastapi.middleware.trustedhost import TrustedHostMiddleware
-# import uuid
-# import time
-# from datetime import datetime
-# from fastapi.responses import JSONResponse
-# import traceback
-
-# logger = logging.getLogger(__name__)
-
-# def setup_middleware(app: FastAPI):
-#     #security middleware
-#     app.add_middleware(
-#         TrustedHostMiddleware,
-#         allowed_hosts=["*"]
-#     )
-
-#     #CORS middleware
-#     app.add_middleware(
-#         CORSMiddleware,
-#         allow_origins = ["*"],
-#         allow_credentials = True,
-#         allow_methods = ["*"],
-#         allow_headers = ["*"]
-#     )
-
-#     #compression middleware
-#     app.add_middleware(GZipMiddleware,minimum_size = 1000)
-
-#     #request ID middleware fro tracking
-#     @app.middleware("http")
-#     async def error_handling_middleware(request:Request, call_next):
-#         try:
-#             response = await call_next(request)
-#             return response
-#         except HTTPException:
-#             raise
-#         except Exception as e:
-#             request_id = getattr(request.state, 'request_id', 'unknown')
-#             logger.error(f"[{request_id}] unhandled exception: {type(e).__name__}")
-#             logger.error(f"[{request_id}] Error details: {str(e)}")
-#             logger.error(f"[{request_id}] Traceback:\n{traceback.format_exc()}")
-
-#             return JSONResponse(
-#                 status_code=500,
-#                 content={
-#                     "detail": "Internal server error",
-#                     "request_id": request_id,
-#                     "timestamp": datetime.utcnow().isoformat()
-#                 }
-#             )
-#     # Request Logging Middleware
-#     @app.middleware("http")
-#     async def logging_middleware(request: Request, call_next):
-#         """Log all requests and responses"""
-#         # Generate request ID
-#         request_id = str(uuid.uuid4())[:8]
-#         request.state.request_id = request_id
-        
-#         # Get request details
-#         start_time = time.time()
-#         client = f"{request.client.host}:{request.client.port}" if request.client else "unknown"
-        
-#         # Log request
-#         logger.info(
-#             f"[{request_id}] Started {request.method} {request.url.path} "
-#             f"from {client}"
-#         )
-        
-#         # Process request
-#         response = await call_next(request)
-        
-#         # Calculate duration
-#         duration = time.time() - start_time
-        
-#         # Log response
-#         logger.info(
-#             f"[{request_id}] Completed {request.method} {request.url.path} "
-#             f"with status {response.status_code} in {duration:.3f}s"
-#         )
-        
-#         # Add custom headers
-#         response.headers["X-Request-ID"] = request_id
-#         response.headers["X-Process-Time"] = f"{duration:.3f}"
-        
-#         return response
-
-#     # Database Middleware
-#     @app.middleware("http")
-#     async def database_middleware(request: Request, call_next):
-#         """Ensure database is available for each request"""
-#         # Add database to request state if needed
-#         if hasattr(app.state, 'db'):
-#             request.state.db = app.state.db
-        
-#         response = await call_next(request)
-#         return response
-
-
-from fastapi import FastAPI, Request, HTTPException
-import logging
+# app/middleware/setup.py - COMPLETE REPLACEMENT
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-import uuid
-import time
-from datetime import datetime
-from fastapi.responses import JSONResponse
-import traceback
 from app.middleware.rate_limiter import GlobalRateLimitMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.monitoring import (
+    PerformanceMonitoringMiddleware,
+    RequestLoggingMiddleware,
+    ErrorTrackingMiddleware
+)
+import os
+import logging
 
 logger = logging.getLogger(__name__)
 
 def setup_middleware(app: FastAPI):
-    # Security middleware
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["*"]
-    )
-
-    # CORS middleware
+    """
+    Setup all middleware in correct order
+    Order matters! Apply from outermost to innermost
+    """
+    
+    # ✅ 1. Security Headers (first, applies to all responses)
+    app.add_middleware(SecurityHeadersMiddleware)
+    logger.info("✅ Security headers middleware added")
+    
+    # ✅ 2. CORS (must be early for OPTIONS requests)
+    allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
+    allowed_origins = [origin.strip() for origin in allowed_origins]
+    
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=allowed_origins if os.getenv('ENVIRONMENT') == 'Production' else ["*"],
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"]
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        allow_headers=["*"],
+        max_age=3600
     )
-
-    # ✅ Global Rate Limiting Middleware - Add this before compression
-    app.add_middleware(
-        GlobalRateLimitMiddleware,
-        max_requests=1000,  # 1000 requests per minute globally per IP
-        window_seconds=60,
-        exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"]
-    )
-
-    # Compression middleware
-    app.add_middleware(GZipMiddleware, minimum_size=1000)
-
-    # Error handling middleware
-    @app.middleware("http")
-    async def error_handling_middleware(request: Request, call_next):
-        try:
-            response = await call_next(request)
-            return response
-        except HTTPException:
-            raise
-        except Exception as e:
-            request_id = getattr(request.state, 'request_id', 'unknown')
-            logger.error(f"[{request_id}] unhandled exception: {type(e).__name__}")
-            logger.error(f"[{request_id}] Error details: {str(e)}")
-            logger.error(f"[{request_id}] Traceback:\n{traceback.format_exc()}")
-
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "detail": "Internal server error",
-                    "request_id": request_id,
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-            )
+    logger.info(f"✅ CORS middleware added (origins: {len(allowed_origins)})")
     
-    # Request Logging Middleware
-    @app.middleware("http")
-    async def logging_middleware(request: Request, call_next):
-        """Log all requests and responses"""
-        # Generate request ID
-        request_id = str(uuid.uuid4())[:8]
-        request.state.request_id = request_id
-        
-        # Get request details
-        start_time = time.time()
-        client = f"{request.client.host}:{request.client.port}" if request.client else "unknown"
-        
-        # Log request
-        logger.info(
-            f"[{request_id}] Started {request.method} {request.url.path} "
-            f"from {client}"
+    # ✅ 3. Trusted Host (security)
+    if os.getenv('ENVIRONMENT') == 'Production':
+        app.add_middleware(
+            TrustedHostMiddleware,
+            allowed_hosts=["*"]  # Configure properly for production
         )
-        
-        # Process request
-        response = await call_next(request)
-        
-        # Calculate duration
-        duration = time.time() - start_time
-        
-        # Log response
-        logger.info(
-            f"[{request_id}] Completed {request.method} {request.url.path} "
-            f"with status {response.status_code} in {duration:.3f}s"
+        logger.info("✅ Trusted host middleware added")
+    
+    # ✅ 4. Error Tracking (catch all errors)
+    app.add_middleware(ErrorTrackingMiddleware)
+    logger.info("✅ Error tracking middleware added")
+    
+    # ✅ 5. Performance Monitoring
+    app.add_middleware(
+        PerformanceMonitoringMiddleware,
+        slow_threshold=float(os.getenv('SLOW_QUERY_THRESHOLD', 2.0))
+    )
+    logger.info("✅ Performance monitoring middleware added")
+    
+    # ✅ 6. Request Logging
+    app.add_middleware(RequestLoggingMiddleware)
+    logger.info("✅ Request logging middleware added")
+    
+    # ✅ 7. Global Rate Limiting
+    if os.getenv('ENABLE_RATE_LIMITING', 'true').lower() == 'true':
+        app.add_middleware(
+            GlobalRateLimitMiddleware,
+            max_requests=int(os.getenv('API_RATE_LIMIT_PER_MINUTE', 1000)),
+            window_seconds=60,
+            exclude_paths=["/health", "/docs", "/openapi.json", "/redoc", "/metrics"]
         )
-        
-        # Add custom headers
-        response.headers["X-Request-ID"] = request_id
-        response.headers["X-Process-Time"] = f"{duration:.3f}"
-        
-        return response
-
-    # Database Middleware
-    @app.middleware("http")
-    async def database_middleware(request: Request, call_next):
-        """Ensure database is available for each request"""
-        # Add database to request state if needed
-        if hasattr(app.state, 'db'):
-            request.state.db = app.state.db
-        
-        response = await call_next(request)
-        return response
+        logger.info("✅ Global rate limiting middleware added")
+    
+    # ✅ 8. Response Compression (last, compresses final response)
+    app.add_middleware(
+        GZipMiddleware,
+        minimum_size=2000  # Only compress responses > 2KB
+    )
+    logger.info("✅ GZIP compression middleware added")
+    
+    logger.info("🎉 All middleware configured successfully")
