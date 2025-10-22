@@ -8,6 +8,7 @@ from schema.user import UserinDB
 import logging
 from app.routes.notifications import create_notification
 from app.services.email_service import email_service
+from app.utils.get_time import get_ist_datetime_for_db
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -283,21 +284,25 @@ async def accept_delivery_order(
                 detail="You have already accepted this order"
             )
         accepted_partners.append(current_user.id)
-        current_time = datetime.utcnow()
+        
+        current_time = get_ist_datetime_for_db()
         status_history_entry = {
             "status": "assigning",
-            "changed_at": current_time,
+            "changed_at": current_time['ist'],
+            "changed_at_ist": current_time['ist_string'],
             "changed_by": current_user.name,
             "partner_id": current_user.id,
             "message": f"{current_user.name} accepted the order"
         }
-
+        # print(status_history_entry)
         update_data = {
             "$set": {
                 "accepted_partners": accepted_partners,
                 "order_status": "assigning",
-                "accepted_at": current_time,
-                "updated_at": current_time,
+                "accepted_at": current_time['ist'],
+                "accepted_at_ist": current_time['ist_string'],
+                "updated_at": current_time['ist'],
+                "updated_at_ist": current_time['ist_string'],
                 "status_message": f"Order accepted by {current_user.name}"
             },
             "$push": {
@@ -350,15 +355,6 @@ async def mark_order_as_delivered(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied. Only delivery partners can mark orders as delivered."
             )
-        # Validate order_id
-        # try:
-        #     order_object_id = order_id
-        # except Exception:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_400_BAD_REQUEST,
-        #         detail="Invalid order ID format"
-        #     )
-        # Check if order exists and is assigned to this delivery partner
         order = await db.find_one("orders", {
             "id": order_id,
             "delivery_partner": current_user.id
@@ -377,7 +373,7 @@ async def mark_order_as_delivered(
                 detail=f"Order with status '{order.get('order_status')}' cannot be marked as delivered"
             )
         
-        current_time = datetime.utcnow()
+        current_time = get_ist_datetime_for_db()
         
         # Mark the order as delivered with proper timeline
         await db.update_one(
@@ -386,15 +382,18 @@ async def mark_order_as_delivered(
             {
                 "$set": {
                     "order_status": "delivered",
-                    "delivered_at": current_time,
+                    "delivered_at":current_time['ist'],
+                    "delivered_at_ist": current_time['ist_string'],
                     "payment_status": "completed" if order.get("payment_method") == "cod" else order.get("payment_status"),
-                    "updated_at": current_time,
+                    "updated_at": current_time['ist'],
+                    "updated_at_ist": current_time['ist_string'],
                     "status_message": "Order delivered successfully!"
                 },
                 "$push": {
                     "status_change_history": {
                         "status": "delivered",
-                        "changed_at": current_time,
+                        "changed_at": current_time['ist'],
+                        "changed_at_ist": current_time['ist_string'],
                         "changed_by": current_user.name,
                         "message": f"Order delivered by {current_user.name}"
                     }

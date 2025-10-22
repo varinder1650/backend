@@ -1,158 +1,74 @@
-# from typing import Optional
-# from pydantic import BaseModel, EmailStr, Field
-
-# class TokenData(BaseModel):
-#     user_id: str
-
-# class User(BaseModel):
-#     name : str = Field(...,min_length=1,max_length=100)
-#     email: EmailStr
-#     phone: Optional[str] = Field(None, min_length=10, max_length=15)  # Made optional
-#     address: Optional[str] = None
-#     city: Optional[str] = None
-#     state: Optional[str] = None
-#     pincode: Optional[str] = None
-#     role: str = Field(default="customer")
-#     is_active: bool = True
-
-# class UserCreate(BaseModel):
-#     name: str = Field(..., min_length=1, max_length=100)
-#     email: EmailStr
-#     password: str = Field(..., min_length=6)
-#     phone: Optional[str] = Field(None, min_length=10, max_length=15)  # Made optional
-#     role: str = Field(default="customer")
-
-# class UserResponse(User):
-#     id: str
-#     provider: str
-
-# class TokenOut(BaseModel):
-#     access_token: str
-#     refresh_token: str
-#     requires_phone: bool
-#     token_type: str = "bearer"
-#     user: Optional[UserResponse] = None
-
-# class UserLogin(BaseModel):
-#     email: EmailStr
-#     password: str
-
-# class GoogleLogin(BaseModel):
-#     googleToken: str
-#     user: dict  # This should contain: email, name, googleId, photo (optional)
-
-# class GoogleLoginResponse(BaseModel):
-#     email: EmailStr
-#     googleId: str
-#     name: str
-#     photo: Optional[str] = None
-
-# class UserinDB(BaseModel):
-#     id: str
-#     name: str
-#     email: EmailStr
-#     role: str
-#     is_active: bool
-
-# class TokenResponse(BaseModel):
-#     access_token: str
-#     token_type: str = "bearer"
-#     user: Optional[UserResponse] = None
-
-# class GoogleTokenResponse(BaseModel):
-#     access_token: str
-#     token_type: str = "bearer"
-#     user: Optional[GoogleLoginResponse] = None
-
-# # Phone update model
-# class PhoneUpdate(BaseModel):
-#     phone: str = Field(..., min_length=10, max_length=15)
-
-# # Refresh token model
-# class RefreshTokenRequest(BaseModel):
-#     refresh_token: str
-
-# # Forgot password model
-# class ForgotPasswordRequest(BaseModel):
-#     email: EmailStr
-
-# # Reset password model
-# class ResetPasswordRequest(BaseModel):
-#     token: str
-#     new_password: str = Field(..., min_length=6)
-
-# class UpdateUser(BaseModel):
-#     name: str
-
-
-from pydantic import BaseModel, EmailStr, Field, validator
+# schema/user.py
+from pydantic import BaseModel, Field, validator
 from typing import Optional
-from datetime import datetime
+from app.utils.validators import email_validator, phone_validator, sanitize_text_validator
+import re
 
 class UserCreate(BaseModel):
-    name: str
-    email: EmailStr
-    password: str
-    phone: Optional[str] = None
-    role: Optional[str] = "customer"
+    name: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., min_length=5, max_length=320)
+    password: str = Field(..., min_length=6, max_length=128)
+    phone: Optional[str] = Field(None, min_length=10, max_length=15)
+    role: str = Field(default="customer")
+    
+    # Validators
+    _validate_email = validator('email', allow_reuse=True)(email_validator)
+    _validate_name = validator('name', allow_reuse=True)(sanitize_text_validator)
+    
+    @validator('password')
+    def validate_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters')
+        if len(v) > 128:
+            raise ValueError('Password too long')
+        return v
+    
+    @validator('phone')
+    def validate_phone_optional(cls, v):
+        if v:
+            return phone_validator(v)
+        return v
+    
+    @validator('role')
+    def validate_role(cls, v):
+        allowed_roles = ['customer', 'delivery_partner', 'admin']
+        if v not in allowed_roles:
+            raise ValueError(f'Role must be one of {allowed_roles}')
+        return v
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
-
-# class GoogleLogin(BaseModel):
-#     googleToken: str
-#     user: dict
-
-class GoogleLogin(BaseModel):
-    googleToken: str
-    user: dict
     
-    class Config:
-        # Allow any extra fields
-        extra = "allow"
+    _validate_email = validator('email', allow_reuse=True)(email_validator)
 
 class PhoneUpdate(BaseModel):
-    phone: str
-
-class VerifyEmailRequest(BaseModel):
-    email: EmailStr
-    otp: str
-
-class ResendOTPRequest(BaseModel):
-    email: EmailStr
-
-class VerifyOTPRequest(BaseModel):
-    email: EmailStr
-    otp: str
-
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-class VerifyPasswordResetOTP(BaseModel):
-    email: EmailStr
-    otp: str
-
-class ResetPasswordWithOTP(BaseModel):
-    email: EmailStr
-    otp: str
-    new_password: str
-
-class ResetPasswordRequest(BaseModel):
-    token: str
-    new_password: str
+    phone: str = Field(..., min_length=10, max_length=15)
+    
+    _validate_phone = validator('phone', allow_reuse=True)(phone_validator)
 
 class UpdateUser(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    
+    _validate_name = validator('name', allow_reuse=True)(sanitize_text_validator)
+
+class UserinDB(BaseModel):
+    id: str
+    email: str
+    role: str
     name: str
+    is_active: bool = True
 
 class UserResponse(BaseModel):
     id: str
     name: str
     email: str
     phone: Optional[str] = None
-    role: str = "customer"
-    is_active: bool = True
+    role: str
+    is_active: bool
     provider: str = "local"
+    email_verified: bool = False
+    phone_verified: bool = False
 
 class TokenOut(BaseModel):
     access_token: str
@@ -161,9 +77,70 @@ class TokenOut(BaseModel):
     requires_phone: bool = False
     user: Optional[UserResponse] = None
 
-class UserinDB(BaseModel):
-    id: str
+class GoogleLogin(BaseModel):
+    user: dict
+    
+    @validator('user')
+    def validate_user_data(cls, v):
+        required_fields = ['email', 'name']
+        for field in required_fields:
+            if field not in v:
+                raise ValueError(f'{field} is required in user data')
+        
+        # ✅ Simple email validation without InputValidator
+        email = v['email']
+        email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+        
+        if not email_pattern.match(email):
+            raise ValueError('Invalid email in Google user data')
+        
+        return v
+
+
+class VerifyEmailRequest(BaseModel):
     email: str
-    role: str
-    name: str
-    is_active: bool = True
+    otp: str = Field(..., min_length=6, max_length=6)
+    
+    _validate_email = validator('email', allow_reuse=True)(email_validator)
+    
+    @validator('otp')
+    def validate_otp(cls, v):
+        if not v.isdigit():
+            raise ValueError('OTP must contain only digits')
+        return v
+
+class VerifyOTPRequest(BaseModel):
+    email: str
+    otp: str = Field(..., min_length=6, max_length=6)
+    
+    _validate_email = validator('email', allow_reuse=True)(email_validator)
+    
+    @validator('otp')
+    def validate_otp(cls, v):
+        if not v.isdigit():
+            raise ValueError('OTP must contain only digits')
+        return v
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+    
+    _validate_email = validator('email', allow_reuse=True)(email_validator)
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=6, max_length=128)
+    
+    _validate_email = validator('email', allow_reuse=True)(email_validator)
+    
+    @validator('otp')
+    def validate_otp(cls, v):
+        if not v.isdigit():
+            raise ValueError('OTP must contain only digits')
+        return v
+    
+    @validator('new_password')
+    def validate_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters')
+        return v
