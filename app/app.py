@@ -1,12 +1,10 @@
-# app/app.py - COMPLETE REPLACEMENT
 from fastapi import FastAPI
 from app.middleware.setup import setup_middleware
 from app.routes import (
     categories, products, orders, auth, cart, brands, 
     settings as settings_route, address, support, delivery, 
-    coupons, shop_status, notifications
+    coupons, shop_status, notifications, porter, metrics
 )
-from app.routes import metrics  # ✅ Add metrics route
 from datetime import datetime
 import os
 
@@ -39,7 +37,8 @@ def create_customer_app() -> FastAPI:
     app.include_router(coupons.router, prefix="/promocodes", tags=["Coupons"])
     app.include_router(shop_status.router, prefix="/shop", tags=["Shop Status"])
     app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
-    app.include_router(metrics.router, prefix="/metrics", tags=["Metrics"])  # ✅ Metrics route
+    app.include_router(metrics.router, prefix="/metrics", tags=["Metrics"])
+    app.include_router(porter.router, prefix="/porter", tags=["Porter"])
     
     @app.get("/")
     async def root():

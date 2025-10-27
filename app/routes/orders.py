@@ -655,3 +655,117 @@ async def add_tip_to_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to add tip"
         )
+
+@router.get("/{order_id}")
+async def get_order_by_id(
+    order_id: str,
+    current_user = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """
+    Get a specific order by ID
+    User can only access their own orders
+    """
+    try:
+        logger.info(f"📦 Fetching order {order_id} for user {current_user.email}")
+        
+        # Validate order_id format
+        if not order_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Order ID is required"
+            )
+        
+        # Get user_id
+        user_id = current_user.id if hasattr(current_user, 'id') else current_user.id
+        # user_id_str = str(user_id) if isinstance(user_id, ObjectId) else user_id
+        
+        # Find order by ID and ensure it belongs to the user
+        order = await db.find_one(
+            "orders",
+            {
+                "id": order_id,
+                "user": user_id
+            }
+        )
+        
+        if not order:
+            logger.warning(f"❌ Order {order_id} not found for user {current_user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found"
+            )
+        
+        logger.info(f"✅ Order {order_id} found, status: {order.get('order_status')}")
+        
+        # Get user information
+        user_info = await db.find_one("users", {"id": user_id})
+        
+        # Get delivery partner information if assigned
+        delivery_partner_info = None
+        if order.get("delivery_partner_id"):
+            delivery_partner_info = await db.find_one(
+                "users",
+                {"id": order["delivery_partner_id"]}
+            )
+        
+        # Serialize order data
+        serialized_order = {
+            "_id": str(order["_id"]),
+            "id": order.get("id"),
+            "order_status": order.get("order_status", "pending"),
+            "items": order.get("items", []),
+            "total_amount": order.get("total_amount", 0),
+            "subtotal": order.get("subtotal", 0),
+            "tax": order.get("tax", 0),
+            "delivery_charge": order.get("delivery_charge", 0),
+            "app_fee": order.get("app_fee", 0),
+            "promo_discount": order.get("promo_discount", 0),
+            "tip_amount": order.get("tip_amount", 0),
+            "payment_method": order.get("payment_method"),
+            "payment_status": order.get("payment_status"),
+            "delivery_address": order.get("delivery_address"),
+            "estimated_delivery_time": order.get("estimated_delivery_time", 30),
+            "actual_delivery": order.get("actual_delivery"),
+            "status_message": order.get("status_message"),
+            "created_at": order["created_at"].isoformat() if order.get("created_at") else None,
+            "updated_at": order.get("updated_at").isoformat() if order.get("updated_at") else None,
+            "assigned_at": order.get("assigned_at").isoformat() if order.get("assigned_at") else None,
+            "out_for_delivery_at": order.get("out_for_delivery_at").isoformat() if order.get("out_for_delivery_at") else None,
+            "delivered_at": order.get("delivered_at").isoformat() if order.get("delivered_at") else None,
+        }
+        
+        # Add delivery partner info if available
+        if delivery_partner_info:
+            serialized_order["delivery_partner"] = {
+                "name": delivery_partner_info.get("name", "Delivery Partner"),
+                "phone": delivery_partner_info.get("phone", ""),
+                "rating": delivery_partner_info.get("rating"),
+                "deliveries": delivery_partner_info.get("total_deliveries"),
+            }
+        
+        # Add status change history if available
+        if order.get("status_change_history"):
+            serialized_order["status_change_history"] = [
+                {
+                    "status": item["status"],
+                    "changed_at": item["changed_at"].isoformat() if hasattr(item.get("changed_at"), 'isoformat') else str(item.get("changed_at")),
+                    "changed_by": item.get("changed_by", "system")
+                }
+                for item in order.get("status_change_history", [])
+            ]
+        
+        logger.info(f"✅ Returning order {order_id} to user {current_user.email}")
+        
+        return serialized_order
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error fetching order by ID: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch order"
+        )
