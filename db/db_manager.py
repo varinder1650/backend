@@ -45,13 +45,22 @@ class DatabaseManager:
             raise e
     
     async def update_one(self, collection: str, filter_dict: Dict[str, Any], update_dict: Dict[str, Any]):
+        """
+        Update a single document atomically
+        Returns UpdateResult object with matched_count and modified_count
+        """
         try:
             if any(key.startswith('$') for key in update_dict.keys()):
                 result = await self.db[collection].update_one(filter_dict, update_dict)
             else:
                 result = await self.db[collection].update_one(filter_dict, {"$set": update_dict})
+            
+            # ✅ Log the result for debugging atomic operations
+            logger.debug(f"update_one in {collection}: matched={result.matched_count}, modified={result.modified_count}")
+            
             return result
         except Exception as e:
+            logger.error(f"Error updating in {collection}: {e}")
             raise e
     
     async def update_many(self, collection: str, filter_dict: Dict[str, Any], update_dict: Dict[str, Any]):

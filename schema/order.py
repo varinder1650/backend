@@ -64,7 +64,9 @@ class OrderBase(BaseModel):
 
 
 class OrderCreate(OrderBase):
-    pass
+    tip_amount: Optional[float] = Field(0, ge=0, le=500)
+    payment_method: str = Field("cod", pattern="^(cod|phonepe)$")
+    payment_status: Optional[str] = "pending"
 
 
 class OrderUpdate(BaseModel):
@@ -97,6 +99,10 @@ class OrderResponse(BaseModel):
     updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     delivery_partner: Optional[str] = None
     delivery_partner_info: Optional[UserInfo] = None
+    tip_amount: Optional[float] = 0
+    payment_method: Optional[str] = "cod"
+    payment_status: Optional[str] = "pending"
+    payment_transaction_id: Optional[str] = None
 
 
 class OrderResponseEnhanced(BaseModel):
