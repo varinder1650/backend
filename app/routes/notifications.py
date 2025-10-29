@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson.objectid import ObjectId
 from fastapi import HTTPException, APIRouter, Depends, status
 from typing import Optional, List
@@ -71,15 +71,28 @@ async def get_notifications(
     db: DatabaseManager = Depends(get_database)
 ):
     """
-    Get all notifications for the current user
+    Get all notifications for the current user from the last 3 days
     """
     try:
+        # ✅ Calculate 3 days ago timestamp
+        three_days_ago = datetime.utcnow() - timedelta(days=3)
+        
+        logger.info(f"Fetching notifications for user {current_user.id} from last 3 days (since {three_days_ago})")
+        
+        # ✅ Query with 3-day filter
         notifications = await db.find_many(
             "notifications",
             {
                 "$or": [
-                    {"user_id": current_user.id, "for": "specific_user"},
-                    {"for": "all_users"}
+                    {
+                        "user_id": current_user.id, 
+                        "for": "specific_user",
+                        "created_at": {"$gte": three_days_ago}
+                    },
+                    {
+                        "for": "all_users",
+                        "created_at": {"$gte": three_days_ago}
+                    }
                 ]
             },
             sort=[("created_at", -1)],
@@ -145,9 +158,9 @@ async def mark_notification_as_read(
                 detail="Notification not found"
             )
 
-        # ✅ Handle based on notification type
+        # Handle based on notification type
         if notification.get('for') == 'specific_user':
-            # ✅ Check if already read
+            # Check if already read
             if notification.get('read', False):
                 logger.info(f"Notification {notification_id} already marked as read for user {current_user.id}")
                 return {
@@ -171,7 +184,7 @@ async def mark_notification_as_read(
             )
             logger.info(f"Marked specific notification {notification_id} as read for user {current_user.id}")
         else:
-            # ✅ For broadcast notifications - check if user already in read_by list
+            # For broadcast notifications - check if user already in read_by list
             read_by_list = notification.get("read_by", [])
             if current_user.id in read_by_list:
                 logger.info(f"User {current_user.id} already read broadcast notification {notification_id}")
@@ -221,22 +234,29 @@ async def get_unread_count(
     current_user: UserinDB = Depends(current_active_user),
     db: DatabaseManager = Depends(get_database)
 ):
-    """Get count of unread notifications for current user"""
+    """Get count of unread notifications for current user from the last 3 days"""
     try:
-        # ✅ Count specific user notifications that are unread
+        # ✅ Calculate 3 days ago timestamp
+        three_days_ago = datetime.utcnow() - timedelta(days=3)
+        
+        # ✅ Count specific user notifications that are unread (last 3 days)
         specific_count = await db.count_documents(
             "notifications",
             {
                 "user_id": current_user.id,
                 "for": "specific_user",
-                "read": False
+                "read": False,
+                "created_at": {"$gte": three_days_ago}
             }
         )
 
-        # ✅ Count broadcast notifications where user hasn't read yet
+        # ✅ Count broadcast notifications where user hasn't read yet (last 3 days)
         broadcast_notifications = await db.find_many(
             "notifications",
-            {"for": "all_users"}
+            {
+                "for": "all_users",
+                "created_at": {"$gte": three_days_ago}
+            }
         )
 
         # Count broadcasts where current user is NOT in read_by list
@@ -247,7 +267,7 @@ async def get_unread_count(
 
         total_unread = specific_count + broadcast_unread_count
 
-        logger.info(f"Unread count for {current_user.id}: {total_unread} (specific: {specific_count}, broadcast: {broadcast_unread_count})")
+        logger.info(f"Unread count (last 3 days) for {current_user.id}: {total_unread} (specific: {specific_count}, broadcast: {broadcast_unread_count})")
 
         return {
             "count": total_unread
@@ -278,7 +298,7 @@ async def delete_notification(
             {
                 "_id": ObjectId(notification_id),
                 "user_id": current_user.id,
-                "for": "specific_user"  # ✅ Only allow deleting specific notifications
+                "for": "specific_user"
             }
         )
 
@@ -307,3 +327,26 @@ async def delete_notification(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete notification"
         )
+
+
+# ✅ OPTIONAL: Background job to clean old notifications
+async def cleanup_old_notifications(db: DatabaseManager):
+    """
+    Background job to delete notifications older than 3 days
+    Run this daily via cron job or scheduler
+    """
+    try:
+        three_days_ago = datetime.utcnow() - timedelta(days=3)
+        
+        result = await db.delete_many(
+            "notifications",
+            {"created_at": {"$lt": three_days_ago}}
+        )
+        
+        deleted_count = result.deleted_count if hasattr(result, 'deleted_count') else 0
+        logger.info(f"Cleaned up {deleted_count} old notifications (older than 3 days)")
+        
+        return deleted_count
+    except Exception as e:
+        logger.error(f"Error cleaning up old notifications: {e}")
+        return 0
