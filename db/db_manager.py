@@ -202,6 +202,10 @@ class DatabaseManager:
                 result = await self.db[collection].update_one(filter_dict, update_dict)
             else:
                 result = await self.db[collection].update_one(filter_dict, {"$set": update_dict})
+            
+            # ✅ Log the result for debugging atomic operations
+            logger.debug(f"update_one in {collection}: matched={result.matched_count}, modified={result.modified_count}")
+            
             return result
         except Exception as e:
             logger.error(f'Error updating in {collection}: {e}')

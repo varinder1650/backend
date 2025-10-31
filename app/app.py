@@ -3,7 +3,7 @@ from app.middleware.setup import setup_middleware
 from app.routes import (
     categories, products, orders, auth, cart, brands, 
     settings as settings_route, address, support, delivery, 
-    coupons, shop_status, notifications, porter, metrics
+    coupons, shop_status, notifications, porter, metrics,payment
 )
 from datetime import datetime
 import os
@@ -39,6 +39,7 @@ def create_customer_app() -> FastAPI:
     app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
     app.include_router(metrics.router, prefix="/metrics", tags=["Metrics"])
     app.include_router(porter.router, prefix="/porter", tags=["Porter"])
+    app.include_router(payment.router, prefix="/payment", tags=["Payment"])
     
     @app.get("/")
     async def root():
