@@ -1,4 +1,3 @@
-from datetime import datetime
 from bson import ObjectId
 from fastapi import HTTPException,APIRouter, Depends, status,BackgroundTasks
 from app.utils.auth import current_active_user
@@ -31,12 +30,10 @@ async def get_available_orders_for_delivery(
         orders = await db.find_many(
             "orders",
             {
-                "order_status": {"$in" : ["preparing","assigning"]}
+                "order_status": {"$in" : ["assigning"]}
             },
             sort=[("created_at", -1)]
         )
-        
-        # print(orders)
         
         enhanced_orders = []
         for order in orders:
@@ -92,7 +89,6 @@ async def get_assigned_orders_for_delivery(
 ):
     """Get orders assigned to the current delivery partner"""
     try:
-        # Check if user is a delivery partner
         if current_user.role != "delivery_partner":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -367,7 +363,7 @@ async def mark_order_as_delivered(
             )
         
         # Check if order status allows marking as delivered
-        if order.get("order_status") not in ["assigned", "out_for_delivery"]:
+        if order.get("order_status") not in ["out_for_delivery"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Order with status '{order.get('order_status')}' cannot be marked as delivered"
