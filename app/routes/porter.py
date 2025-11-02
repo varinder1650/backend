@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field, validator
 from typing import Optional
-from datetime import datetime
 from bson import ObjectId
 from db.db_manager import get_database, DatabaseManager
 from app.utils.auth import get_current_user, current_active_user
@@ -16,8 +15,8 @@ class Address(BaseModel):
     address: str = Field(..., min_length=10, max_length=300)
     city: str = Field(..., min_length=2, max_length=50)
     pincode: str = Field(..., min_length=6, max_length=6)
-    latitude: Optional[float] = None  # ✅ NEW
-    longitude: Optional[float] = None  # ✅ NEW
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     
     @validator('pincode')
     def validate_pincode(cls, v):
@@ -26,17 +25,24 @@ class Address(BaseModel):
         return v
 
 class PackageDimensions(BaseModel):
-    length: float = Field(..., gt=0, le=500)
-    breadth: float = Field(..., gt=0, le=500)
-    height: float = Field(..., gt=0, le=500)
+    length: str = Field(..., description="Length category: '< 10 cm', '10-20 cm', '20-50 cm', '> 50 cm'")
+    breadth: str = Field(..., description="Breadth category: '< 10 cm', '10-20 cm', '20-50 cm', '> 50 cm'")
+    height: str = Field(..., description="Height category: '< 10 cm', '10-20 cm', '20-50 cm', '> 50 cm'")
     unit: str = Field(default="cm")
+    
+    @validator('length', 'breadth', 'height')
+    def validate_dimension_category(cls, v):
+        valid_categories = ['< 10 cm', '10-20 cm', '20-50 cm', '> 50 cm']
+        if v not in valid_categories:
+            raise ValueError(f'Dimension must be one of: {", ".join(valid_categories)}')
+        return v
     
     @validator('unit')
     def validate_unit(cls, v):
         if v not in ['cm', 'inch']:
             raise ValueError('Unit must be cm or inch')
         return v
-
+        
 class PorterRequestCreate(BaseModel):
     pickup_address: Address
     delivery_address: Address
