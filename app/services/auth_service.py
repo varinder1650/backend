@@ -44,7 +44,7 @@ class AuthService:
                 "hashed_password": hashed_password,
                 "provider": "local",
                 "email_verified": False,  # Not verified yet
-                "created_at": ist_time('ist_string'),
+                "created_at": ist_time['ist_string'],
                 "is_active": True,
                 "role": getattr(user_data, 'role', 'customer')
             }
@@ -151,7 +151,7 @@ class AuthService:
                         "phone_verified": False,
                         "phone_is_temporary": False,  # ✅ Set to False (not unset)
                         "requires_phone_update": False,
-                        "phone_updated_at": ist_time('ist_string')
+                        "phone_updated_at": ist_time['ist_string']
                     }
                 }
             )
@@ -213,7 +213,7 @@ class AuthService:
                 "email_verified": True,  # Google emails are pre-verified
                 "role": "customer",
                 "is_active": True,
-                "created_at": ist_time('ist_string')
+                "created_at": ist_time['ist_string']
             }
             
             user_id = await self.db.insert_one("users", user_doc)
