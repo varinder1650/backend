@@ -52,7 +52,6 @@ class PorterRequestCreate(BaseModel):
     weight_category: str
     estimated_distance: Optional[float] = Field(None, gt=0, le=1000)
     urgent: bool = Field(default=False)
-    estimated_cost: float = Field(..., gt=0)
     
     @validator('weight_category')
     def validate_weight(cls, v):
@@ -89,7 +88,7 @@ async def create_porter_request(
         
         current_time = get_ist_datetime_for_db()
         request_id = str(ObjectId())
-        print(request_data)
+        
         # Prepare porter request document
         porter_request = {
             "_id": ObjectId(request_id),
@@ -123,7 +122,6 @@ async def create_porter_request(
             },
             "weight_category": request_data.weight_category,
             "urgent": request_data.urgent,
-            "estimated_cost": request_data.estimated_cost,
             "status": "pending",
             "created_at": current_time['ist'],
             "created_at_ist": current_time['ist_string'],
@@ -131,6 +129,7 @@ async def create_porter_request(
             "updated_at_ist": current_time['ist_string'],
             "assigned_partner_id": None,
             "assigned_partner_name": None,
+            "estimated_cost": None,
             "actual_cost": None,
             "payment_status": "not_required",
             "payment_transaction_id": None,
