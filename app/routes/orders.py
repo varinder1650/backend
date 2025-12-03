@@ -21,6 +21,81 @@ id_generator = get_id_generator()
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# @router.post("/")
+# async def create_order(
+#     order_data: dict,
+#     background_tasks: BackgroundTasks,
+#     current_user: UserinDB = Depends(current_active_user),
+#     db: DatabaseManager = Depends(get_database)
+# ):
+#     try:
+#         logger.info(f"Order creation request from user: {current_user.email}")
+#         logger.info(f"Order data received: {order_data}")
+        
+#         order_service = OrderService(db)
+#         custom_id = await id_generator.generate_order_id(current_user.id)
+        
+#         # ✅ This already handles stock deduction atomically
+#         order_id = await order_service.create_order(order_data, current_user, custom_id)
+
+#         logger.info(f"Order created successfully with ID: {order_id}")
+        
+#         # Get the created order details
+#         created_order = await db.find_one("orders", {"_id": ObjectId(order_id)})
+        
+#         # Create notification for order confirmation
+#         try:
+#             await create_notification(
+#                 db=db,
+#                 user_id=current_user.id,
+#                 title="Order Placed Successfully! ✓",
+#                 message=f"Your order #{created_order.get('id', order_id)} has been placed and will be confirmed shortly.",
+#                 notification_type="order",
+#                 order_id=str(created_order.get('id', order_id))
+#             )
+#         except Exception as notif_error:
+#             logger.error(f"Failed to create notification: {notif_error}")
+        
+#         # Invalidate user's cart and order caches
+#         redis = get_redis()
+#         try:
+#             await redis.delete(f"cart:{current_user.id}")
+#             await redis.delete(f"recent_orders:{current_user.id}")
+#         except Exception as cache_error:
+#             logger.warning(f"Cache invalidation error: {cache_error}")
+        
+#         # Add background tasks for order processing
+#         background_tasks.add_task(
+#             send_order_confirmation_email, 
+#             created_order, 
+#             current_user.email,
+#             current_user.name
+#         )
+        
+#         # ❌ REMOVE THIS - Stock is already deducted in order_service.create_order()
+#         # background_tasks.add_task(update_inventory_after_order, order_data.get('items', []), db)
+        
+#         # Format response
+#         created_order['id'] = str(created_order["id"])
+#         created_order["user"] = str(created_order['user'])
+#         for item in created_order.get("items", []):
+#             if isinstance(item.get("product"), ObjectId):
+#                 item["product"] = str(item["product"])
+
+#         return OrderResponse(**created_order)
+        
+#     except ValueError as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=str(e)
+#         )
+#     except Exception as e:
+#         logger.error(f"Create order error: {e}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to create order"
+#         )
+
 @router.post("/")
 async def create_order(
     order_data: dict,
@@ -35,7 +110,6 @@ async def create_order(
         order_service = OrderService(db)
         custom_id = await id_generator.generate_order_id(current_user.id)
         
-        # ✅ This already handles stock deduction atomically
         order_id = await order_service.create_order(order_data, current_user, custom_id)
 
         logger.info(f"Order created successfully with ID: {order_id}")
@@ -43,16 +117,27 @@ async def create_order(
         # Get the created order details
         created_order = await db.find_one("orders", {"_id": ObjectId(order_id)})
         
-        # Create notification for order confirmation
+        # ✅ Create notification with push
         try:
+            from app.routes.notifications import create_notification
+            
+            order_type = order_data.get('order_type', 'product')
+            if order_type == 'printout':
+                notification_title = "Printout Order Placed! 🖨️"
+                notification_message = f"Your printout order #{created_order.get('id', order_id)} has been received and will be ready soon."
+            else:
+                notification_title = "Order Placed Successfully! ✅"
+                notification_message = f"Your order #{created_order.get('id', order_id)} has been placed and will be confirmed shortly."
+            
             await create_notification(
                 db=db,
                 user_id=current_user.id,
-                title="Order Placed Successfully! ✓",
-                message=f"Your order #{created_order.get('id', order_id)} has been placed and will be confirmed shortly.",
+                title=notification_title,
+                message=notification_message,
                 notification_type="order",
                 order_id=str(created_order.get('id', order_id))
             )
+            logger.info(f"✅ Notification with push sent for order {order_id}")
         except Exception as notif_error:
             logger.error(f"Failed to create notification: {notif_error}")
         
@@ -71,9 +156,6 @@ async def create_order(
             current_user.email,
             current_user.name
         )
-        
-        # ❌ REMOVE THIS - Stock is already deducted in order_service.create_order()
-        # background_tasks.add_task(update_inventory_after_order, order_data.get('items', []), db)
         
         # Format response
         created_order['id'] = str(created_order["id"])
@@ -95,7 +177,7 @@ async def create_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create order"
         )
-
+        
 @router.get("/my")
 async def get_my_orders(
     page: int = Query(1, ge=1),

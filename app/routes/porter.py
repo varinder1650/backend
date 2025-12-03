@@ -89,7 +89,7 @@ async def create_porter_request(
         
         current_time = get_ist_datetime_for_db()
         request_id = str(ObjectId())
-        print(request_data)
+        # print(request_data)
         # Prepare porter request document
         porter_request = {
             "_id": ObjectId(request_id),
@@ -132,7 +132,7 @@ async def create_porter_request(
             "assigned_partner_id": None,
             "assigned_partner_name": None,
             "actual_cost": None,
-            "payment_status": "not_required",
+            "payment_status": "pending",
             "payment_transaction_id": None,
             "admin_notes": None,
         }
@@ -159,8 +159,9 @@ async def create_porter_request(
         return {
             "message": "Porter request submitted successfully",
             "request_id": request_id,
+            "estimated_cost": request_data.estimated_cost,
             "status": "pending",
-            "estimated_response_time": "15-30 minutes"
+            "redirect_to_checkout": True
         }
         
     except ValueError as ve:
@@ -371,6 +372,94 @@ async def update_estimated_cost(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update estimated cost"
+        )
+
+@router.patch("/porter-requests/{request_id}/confirm-cod")
+async def confirm_porter_cod_payment(
+    request_id: str,
+    background_tasks: BackgroundTasks,
+    current_user = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """Confirm porter request with COD payment method"""
+    try:
+        if not ObjectId.is_valid(request_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid request ID"
+            )
+        
+        user_id = current_user.id if hasattr(current_user, 'id') else current_user.id
+        
+        request = await db.find_one(
+            "porter_requests",
+            {"_id": ObjectId(request_id)}
+        )
+        # print(request)
+        if not request:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Porter request not found"
+            )
+    
+        if not request.get("estimated_cost"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Estimated cost not yet available"
+            )
+        
+        if request.get("payment_status") == "completed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Request already confirmed"
+            )
+        
+        # Update porter request with COD payment
+        current_time = get_ist_datetime_for_db()
+        await db.update_one(
+            "porter_requests",
+            {"_id": ObjectId(request_id)},
+            {
+                "$set": {
+                    "payment_method": "cod",
+                    "payment_status": "cod_pending",
+                    "confirmed_at": current_time['ist'],
+                    "updated_at": current_time['ist'],
+                    "updated_at_ist": current_time['ist_string'],
+                }
+            }
+        )
+        
+        # ✅ Create notification with push
+        try:
+            from app.routes.notifications import create_notification
+            await create_notification(
+                db=db,
+                user_id=user_id,
+                title="Porter Request Confirmed! 🚚",
+                message=f"Your porter request has been confirmed. Payment of ₹{request['estimated_cost']} will be collected on delivery.",
+                notification_type="porter_confirmed",
+                order_id=request_id
+            )
+        except Exception as notif_error:
+            logger.error(f"Failed to create notification: {notif_error}")
+        
+        logger.info(f"✅ COD confirmed for porter request {request_id}")
+        
+        return {
+            "success": True,
+            "message": "Porter request confirmed with COD",
+            "request_id": request_id,
+            "payment_method": "cod"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error confirming COD: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to confirm request"
         )
 
 # Payment for porter request

@@ -718,3 +718,37 @@ async def update_profile(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update profile"
         )
+
+@router.post("/push-token")
+async def save_push_token(
+    push_token_data: dict,
+    current_user = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """Save user's Expo push notification token"""
+    try:
+        user_id = current_user.id if hasattr(current_user, 'id') else current_user.id
+        
+        from app.utils.get_time import get_ist_datetime_for_db
+        current_time = get_ist_datetime_for_db()
+        
+        await db.update_one(
+            "users",
+            {"id": user_id},
+            {
+                "$set": {
+                    "expo_push_token": push_token_data.get("push_token"),
+                    "push_token_updated_at": current_time['ist']
+                }
+            }
+        )
+        
+        logger.info(f"✅ Push token saved for user {user_id}")
+        return {"message": "Push token saved successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error saving push token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save push token"
+        )
