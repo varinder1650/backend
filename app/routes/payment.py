@@ -599,3 +599,177 @@ async def initiate_phonepe_payment_internal(
         }
     else:
         raise Exception(response_data.get("message", "Payment initiation failed"))
+
+# Update the porter payment callback
+
+@router.post("/phonepe/callback/porter")
+async def phonepe_porter_payment_callback(
+    request: Request,
+    db: DatabaseManager = Depends(get_database)
+):
+    """Handle PhonePe payment callback for porter requests"""
+    try:
+        callback_data = await request.json()
+        logger.info(f"📱 PhonePe Porter callback: {callback_data}")
+        
+        # Verify checksum
+        x_verify = request.headers.get("X-VERIFY")
+        if not x_verify:
+            raise HTTPException(status_code=400, detail="Missing X-VERIFY")
+        
+        response_base64 = callback_data.get("response")
+        if not response_base64:
+            raise HTTPException(status_code=400, detail="Missing response")
+        
+        # Decode response
+        import base64
+        import json
+        response_json = base64.b64decode(response_base64).decode()
+        response_data = json.loads(response_json)
+        
+        merchant_transaction_id = response_data.get("data", {}).get("merchantTransactionId")
+        payment_status = response_data.get("code")
+        
+        # Find payment transaction
+        payment_transaction = await db.find_one(
+            "payment_transactions",
+            {"merchant_transaction_id": merchant_transaction_id}
+        )
+        
+        if not payment_transaction:
+            raise HTTPException(status_code=404, detail="Payment transaction not found")
+        
+        request_id = payment_transaction["request_id"]
+        
+        from app.utils.get_time import get_ist_datetime_for_db
+        current_time = get_ist_datetime_for_db()
+        
+        if payment_status == "PAYMENT_SUCCESS":
+            # Update payment transaction
+            await db.update_one(
+                "payment_transactions",
+                {"merchant_transaction_id": merchant_transaction_id},
+                {
+                    "$set": {
+                        "status": "completed",
+                        "phonepe_response": response_data,
+                        "completed_at": current_time['ist'],
+                    }
+                }
+            )
+            
+            # Update porter request payment status
+            await db.update_one(
+                "porter_requests",
+                {"id": request_id},
+                {
+                    "$set": {
+                        "payment_status": "completed",
+                        "paid_at": current_time['ist'],
+                        "updated_at": current_time['ist'],
+                    }
+                }
+            )
+            
+            # ✅ Create notification with push
+            try:
+                from app.routes.notifications import create_notification
+                porter_request = await db.find_one("porter_requests", {"id": request_id})
+                if porter_request:
+                    await create_notification(
+                        db=db,
+                        user_id=porter_request["user_id"],
+                        title="Payment Successful! ✅",
+                        message=f"Payment of ₹{payment_transaction['amount']} completed. Your porter request is now confirmed.",
+                        notification_type="porter_payment",
+                        order_id=request_id
+                    )
+            except Exception as notif_error:
+                logger.error(f"Failed to create notification: {notif_error}")
+            
+            logger.info(f"✅ Porter payment completed for request {request_id}")
+            
+            return {
+                "success": True,
+                "message": "Payment completed",
+                "request_id": request_id
+            }
+        
+        elif payment_status in ["PAYMENT_ERROR", "PAYMENT_DECLINED"]:
+            # Payment failed
+            await db.update_one(
+                "payment_transactions",
+                {"merchant_transaction_id": merchant_transaction_id},
+                {"$set": {"status": "failed", "failed_at": current_time['ist']}}
+            )
+            
+            await db.update_one(
+                "porter_requests",
+                {"id": request_id},
+                {"$set": {"payment_status": "failed", "updated_at": current_time['ist']}}
+            )
+            
+            # ✅ Send failure notification
+            try:
+                from app.routes.notifications import create_notification
+                porter_request = await db.find_one("porter_requests", {"id": request_id})
+                if porter_request:
+                    await create_notification(
+                        db=db,
+                        user_id=porter_request["user_id"],
+                        title="Payment Failed ❌",
+                        message=f"Payment of ₹{payment_transaction['amount']} failed. Please try again.",
+                        notification_type="porter_payment_failed",
+                        order_id=request_id
+                    )
+            except Exception as notif_error:
+                logger.error(f"Failed to create notification: {notif_error}")
+            
+            logger.warning(f"⚠️ Porter payment failed for request {request_id}")
+            return {"success": False, "message": "Payment failed"}
+        
+    except Exception as e:
+        logger.error(f"Error processing porter payment callback: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process callback")
+
+
+# Similarly update the regular order payment callback
+@router.post("/phonepe/callback")
+async def phonepe_payment_callback(
+    request: Request,
+    db: DatabaseManager = Depends(get_database)
+):
+    """Handle PhonePe payment callback"""
+    try:
+        # ... existing verification code ...
+        
+        if payment_status == "PAYMENT_SUCCESS":
+            # ... existing update code ...
+            
+            # ✅ Add notification
+            try:
+                from app.routes.notifications import create_notification
+                order = await db.find_one("orders", {"id": order_id})
+                if order:
+                    await create_notification(
+                        db=db,
+                        user_id=order["user"],
+                        title="Payment Successful! ✅",
+                        message=f"Payment completed for order #{order_id}. Your order is being processed.",
+                        notification_type="order_payment",
+                        order_id=order_id
+                    )
+            except Exception as notif_error:
+                logger.error(f"Failed to create notification: {notif_error}")
+            
+            return {
+                "success": True,
+                "message": "Payment completed successfully",
+                "order_id": order_id
+            }
+        
+        # ... rest of the code ...
+        
+    except Exception as e:
+        logger.error(f"Error processing payment callback: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process callback")
