@@ -139,10 +139,13 @@ async def get_products(
             if ObjectId.is_valid(category):
                 query["category"] = ObjectId(category)
             else:
+                # print("category: ",category)
                 cat = await db.find_one("categories", {
-                    "name": {"$regex": category, "$options": "i"},
-                    "is_active": True
+                    # "name": {"$regex": category, "$options": "i"},
+                    "is_active": True,
+                    "id": category,
                 })
+                # print("cat: ",cat)
                 if cat:
                     query["category"] = cat["id"]
                 else:
@@ -341,7 +344,7 @@ async def get_products(
                 logger.info(f"💾 Cached result: {cache_key[:30]}... (TTL: {ttl}s, L1: {page == 1})")
             except Exception as cache_error:
                 logger.warning(f"⚠️ Cache write error: {cache_error}")
-        
+        # print(response_data)
         return response_data
         
     except Exception as e:
