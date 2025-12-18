@@ -226,6 +226,7 @@ async def login_user(
 ):
     """Login user"""
     try:
+        print(user_data)
         auth_service = AuthService(db)
         user = await auth_service.authenticate_user(db, user_data.email, user_data.password)
         
@@ -267,6 +268,7 @@ async def login_user(
             access_token=access_token,
             refresh_token=refresh_token,
             requires_phone=requires_phone,
+            user = user,
             token_type="bearer"
         )
         
