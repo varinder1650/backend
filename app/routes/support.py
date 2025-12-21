@@ -33,7 +33,7 @@ async def create_support_ticket(
         ticket_doc["priority"] = ticket_data.priority if hasattr(ticket_data, 'priority') else "medium"
         ticket_doc["created_at"] = datetime.utcnow()
         ticket_doc["updated_at"] = datetime.utcnow()
-        ticket_doc["messages"] = []  # Initialize empty messages array
+        ticket_doc["messages"] = []
         ticket_doc["assigned_to"] = None
         ticket_doc["admin_response"] = None
         
