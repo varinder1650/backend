@@ -1,11 +1,30 @@
 # schema/cart.py
 from pydantic import BaseModel, Field, validator
-from typing import Optional
+from typing import Any, Dict, Literal, Optional
 from app.utils.validators import quantity_validator, sanitize_text_validator
 
+class PorterServiceDetails(BaseModel):
+    pickupAddress: str
+    deliveryAddress: str
+    distance: float
+    dimensions: Dict[str, str]  # {length, width, height}
+    notes: Optional[str] = None
+
+class PrintoutServiceDetails(BaseModel):
+    numberOfPages: int
+    copies: int
+    colorPrinting: bool
+    paperSize: Literal['A4', 'Letter', 'Legal']
+    notes: Optional[str] = None
+
 class CartRequest(BaseModel):
-    productId: str = Field(..., min_length=1, max_length=100)
-    quantity: int = Field(..., gt=0, le=100)
+    productId: Optional[str] = None
+    quantity: int = 1
+
+    serviceType: Optional[Literal['product','porter','prinout']] = 'product'
+    serviceName: Optional[str] = None
+    servicePrice: Optional[float] = None
+    serviceDetails: Optional[Dict[str,Any]] = None
     
     # Validators
     _validate_quantity = validator('quantity', allow_reuse=True)(quantity_validator)

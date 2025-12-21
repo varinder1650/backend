@@ -344,7 +344,7 @@ async def get_products(
                 logger.info(f"💾 Cached result: {cache_key[:30]}... (TTL: {ttl}s, L1: {page == 1})")
             except Exception as cache_error:
                 logger.warning(f"⚠️ Cache write error: {cache_error}")
-        # print(response_data)
+        print(response_data)
         return response_data
         
     except Exception as e:
