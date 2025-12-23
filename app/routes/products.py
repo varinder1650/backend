@@ -1,4 +1,3 @@
-# app/routes/products.py - COMPLETE REPLACEMENT
 from typing import Optional
 from bson import ObjectId
 from fastapi import APIRouter, Depends, Query, HTTPException, status
