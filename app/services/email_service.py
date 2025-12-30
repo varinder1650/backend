@@ -118,7 +118,7 @@ class EmailService:
         try:
             subject = f"Order Confirmed - #{order_data['order_id']} 🎉"
             
-            subtotal = sum(item['price'] * item['quantity'] for item in order_data['items'])
+            # subtotal = sum(item['price'] * item['quantity'] for item in order_data['items'])
             
             html_body = f"""
             <!DOCTYPE html>
@@ -147,7 +147,6 @@ class EmailService:
                         
                         <div class="order-details">
                             <h3>Order Details</h3>
-                            <p><strong>Restaurant:</strong> {order_data.get('restaurant_name', 'N/A')}</p>
                             <p><strong>Delivery Address:</strong> {order_data.get('delivery_address', 'N/A')}</p>
                             <p><strong>Estimated Delivery:</strong> {order_data['estimated_delivery']}</p>
                             

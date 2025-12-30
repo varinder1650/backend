@@ -97,26 +97,26 @@ async def create_notification(
         }
         
         result = await db.insert_one("notifications", notification_data)
-        
+        print("notify: ",result)
         # ✅ SEND PUSH NOTIFICATION
-        try:
-            user = await db.find_one("users", {"id": user_id})
-            if user and user.get("expo_push_token"):
-                await send_push_notification(
-                    push_token=user["expo_push_token"],
-                    title=title,
-                    message=message,
-                    data={
-                        "order_id": order_id, 
-                        "type": notification_type,
-                        "notification_id": str(result.inserted_id) if hasattr(result, 'inserted_id') else None
-                    }
-                )
-                logger.info(f"✅ Push notification sent for user {user_id}")
-            else:
-                logger.info(f"ℹ️ No push token found for user {user_id}")
-        except Exception as push_error:
-            logger.error(f"Failed to send push notification: {push_error}")
+        # try:
+        #     user = await db.find_one("users", {"id": user_id})
+        #     if user and user.get("expo_push_token"):
+        #         await send_push_notification(
+        #             push_token=user["expo_push_token"],
+        #             title=title,
+        #             message=message,
+        #             data={
+        #                 "order_id": order_id, 
+        #                 "type": notification_type,
+        #                 "notification_id": str(result.inserted_id) if hasattr(result, 'inserted_id') else None
+        #             }
+        #         )
+        #         logger.info(f"✅ Push notification sent for user {user_id}")
+        #     else:
+        #         logger.info(f"ℹ️ No push token found for user {user_id}")
+        # except Exception as push_error:
+        #     logger.error(f"Failed to send push notification: {push_error}")
         
         logger.info(f"Notification created for user {user_id}: {title}")
         return result

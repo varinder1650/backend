@@ -18,7 +18,7 @@ class PrintoutServiceDetails(BaseModel):
     notes: Optional[str] = None
 
 class CartRequest(BaseModel):
-    productId: Optional[str] = None
+    id: Optional[str] = None
     quantity: int = 1
 
     serviceType: Optional[Literal['product','porter','prinout']] = 'product'
@@ -29,7 +29,7 @@ class CartRequest(BaseModel):
     # Validators
     _validate_quantity = validator('quantity', allow_reuse=True)(quantity_validator)
     
-    @validator('productId')
+    @validator('id')
     def validate_product_id(cls, v):
         if not v or not v.strip():
             raise ValueError('Product ID is required')
