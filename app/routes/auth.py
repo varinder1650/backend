@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, status, Request, BackgroundTasks
 import logging
 from dotenv import load_dotenv
@@ -10,9 +11,9 @@ from db.db_manager import DatabaseManager, get_database
 from schema.user import (
     UserCreate, TokenOut, UserResponse, UserLogin, GoogleLogin, 
     PhoneUpdate, ForgotPasswordRequest, ResetPasswordRequest, 
-    UpdateUser, VerifyEmailRequest, VerifyOTPRequest
+    UpdateUser, UserinDB, VerifyEmailRequest, VerifyOTPRequest
 )
-from app.utils.auth import create_refresh_token, get_current_user, create_access_token
+from app.utils.auth import Oauth_2_scheme, create_refresh_token, get_current_user, create_access_token
 from jose import JWTError, jwt
 from app.utils.id_generator import get_id_generator
 from app.middleware.rate_limiter import rate_limit
@@ -41,6 +42,14 @@ class ResetPasswordWithOTP(BaseModel):
     otp: str
     new_password: str
 
+async def get_current_user_optional(
+    token: str = Depends(Oauth_2_scheme),
+    db: DatabaseManager = Depends(get_database)
+) -> Optional[UserinDB]:
+    try:
+        return await get_current_user(token=token, db=db)
+    except Exception:
+        return None
 
 @router.post("/register")
 @rate_limit(max_requests=5, window_seconds=300)
@@ -625,25 +634,53 @@ async def refresh_token(
         )
 
 
+# @router.post("/logout")
+# @rate_limit(max_requests=10, window_seconds=60)
+# async def logout(
+#     db: DatabaseManager = Depends(get_database),
+#     current_user=Depends(get_current_user)
+# ):
+#     """Logout user and revoke refresh tokens"""
+#     try:
+#         # Delete all refresh tokens for this user
+#         await db.delete_many('refresh_tokens', {'user_id': current_user.id})
+        
+#         logger.info(f"User {current_user.id} logged out")
+        
+#         return {
+#             "success": True,
+#             "message": "Logged out successfully"
+#         }
+#     except Exception as e:
+#         logger.error(f"Logout error: {str(e)}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Logout failed"
+#         )
+
 @router.post("/logout")
 @rate_limit(max_requests=10, window_seconds=60)
 async def logout(
     db: DatabaseManager = Depends(get_database),
-    current_user=Depends(get_current_user)
+    current_user: Optional[UserinDB] = Depends(get_current_user_optional)
 ):
-    """Logout user and revoke refresh tokens"""
     try:
-        # Delete all refresh tokens for this user
-        await db.delete_many('refresh_tokens', {'user_id': current_user.id})
-        
-        logger.info(f"User {current_user.id} logged out")
-        
+        if current_user:
+            await db.delete_many(
+                "refresh_tokens",
+                {"user_id": current_user.id}
+            )
+            logger.info(f"User {current_user.id} logged out")
+        else:
+            logger.info("Logout called without valid user (token expired)")
+
         return {
             "success": True,
             "message": "Logged out successfully"
         }
+
     except Exception as e:
-        logger.error(f"Logout error: {str(e)}")
+        logger.error(f"Logout error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Logout failed"

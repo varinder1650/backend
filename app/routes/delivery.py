@@ -71,6 +71,7 @@ async def get_available_orders_for_delivery(
                 continue
         
         logger.info(f"Returning {len(enhanced_orders)} available orders for delivery")
+        # print(enhanced_orders)
         return enhanced_orders
         
     except HTTPException:
