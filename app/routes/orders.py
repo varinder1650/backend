@@ -403,6 +403,96 @@ async def create_order(
             detail="Failed to create order"
         )
         
+# @router.get("/my")
+# async def get_my_orders(
+#     page: int = Query(1, ge=1),
+#     limit: int = Query(10, ge=1, le=50),
+#     current_user: UserinDB = Depends(current_active_user),
+#     db: DatabaseManager = Depends(get_database)
+# ):
+#     """Get user's order history - NO CACHING for real-time status updates"""
+#     try:
+#         logger.info(f"Fetching orders for user {current_user.id}")
+        
+#         skip = (page - 1) * limit
+#         total_orders = await db.count_documents("orders", {"user": current_user.id})
+#         total_pages = (total_orders + limit - 1) // limit if total_orders > 0 else 0
+        
+#         orders = await db.find_many(
+#             "orders", 
+#             {"user": current_user.id},
+#             sort=[("created_at", -1)],
+#             skip=skip,
+#             limit=limit
+#         )
+        
+#         # Process orders
+#         enhanced_orders = []
+#         for order in orders:
+#             try:
+#                 # Process items
+#                 if "items" in order and isinstance(order["items"], list):
+#                     for item in order["items"]:
+#                         try:
+#                             if isinstance(item.get('product'), str):
+#                                 product_id = item['product']
+#                             elif isinstance(item.get('product'), ObjectId):
+#                                 product_id = item['product']
+#                                 item['product'] = str(item['product'])
+#                             else:
+#                                 continue
+
+#                             product = await db.find_one("products", {"id": product_id})
+#                             if product:
+#                                 item["product_name"] = product["name"]
+#                                 item["product_image"] = product.get("images", [])
+#                             else:
+#                                 item["product_name"] = "Product not found"
+#                                 item["product_image"] = []
+                                
+#                         except Exception as item_error:
+#                             logger.error(f"Error processing item: {item_error}")
+#                             item["product_name"] = "Error loading product"
+#                             item["product_image"] = []
+                
+#                 # Fix MongoDB types
+#                 fixed_order = fix_mongo_types(order)
+
+#                 try:
+#                     validated_order = OrderResponseEnhanced(**fixed_order)
+#                     order_dict = validated_order.model_dump(by_alias=True)
+#                     enhanced_orders.append(order_dict)
+#                 except Exception as validation_error:
+#                     logger.error(f"Validation error: {validation_error}")
+#                     enhanced_orders.append(fixed_order)
+                    
+#             except Exception as order_error:
+#                 logger.error(f"Error processing order: {order_error}")
+#                 continue
+
+#         result = {
+#             "orders": enhanced_orders,
+#             "pagination": {
+#                 "currentPage": page,
+#                 "totalPages": total_pages,
+#                 "totalOrders": total_orders,
+#                 "hasNextPage": page < total_pages,
+#                 "hasPrevPage": page > 1
+#             }
+#         }
+        
+#         logger.info(f"✅ Returning {len(enhanced_orders)} fresh orders for page {page}")
+#         return result
+        
+#     except Exception as e:
+#         logger.error(f"Get my orders error: {e}")
+#         import traceback
+#         logger.error(f"Full traceback: {traceback.format_exc()}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to get orders"
+#         )
+
 @router.get("/my")
 async def get_my_orders(
     page: int = Query(1, ge=1),
@@ -410,68 +500,46 @@ async def get_my_orders(
     current_user: UserinDB = Depends(current_active_user),
     db: DatabaseManager = Depends(get_database)
 ):
-    """Get user's order history - NO CACHING for real-time status updates"""
+    """
+    Get user's order history - optimized minimal data for fast response.
+    Returns order_id, created_at, delivered_at, total_amount, order_type, and order_status.
+    """
     try:
         logger.info(f"Fetching orders for user {current_user.id}")
-        
+
         skip = (page - 1) * limit
         total_orders = await db.count_documents("orders", {"user": current_user.id})
         total_pages = (total_orders + limit - 1) // limit if total_orders > 0 else 0
-        
+
+        # Fetch only the necessary fields
         orders = await db.find_many(
-            "orders", 
+            "orders",
             {"user": current_user.id},
             sort=[("created_at", -1)],
             skip=skip,
-            limit=limit
+            limit=limit,
         )
-        
-        # Process orders
-        enhanced_orders = []
+
+        optimized_orders = []
         for order in orders:
             try:
-                # Process items
-                if "items" in order and isinstance(order["items"], list):
-                    for item in order["items"]:
-                        try:
-                            if isinstance(item.get('product'), str):
-                                product_id = item['product']
-                            elif isinstance(item.get('product'), ObjectId):
-                                product_id = item['product']
-                                item['product'] = str(item['product'])
-                            else:
-                                continue
-
-                            product = await db.find_one("products", {"id": product_id})
-                            if product:
-                                item["product_name"] = product["name"]
-                                item["product_image"] = product.get("images", [])
-                            else:
-                                item["product_name"] = "Product not found"
-                                item["product_image"] = []
-                                
-                        except Exception as item_error:
-                            logger.error(f"Error processing item: {item_error}")
-                            item["product_name"] = "Error loading product"
-                            item["product_image"] = []
-                
-                # Fix MongoDB types
                 fixed_order = fix_mongo_types(order)
 
-                try:
-                    validated_order = OrderResponseEnhanced(**fixed_order)
-                    order_dict = validated_order.model_dump(by_alias=True)
-                    enhanced_orders.append(order_dict)
-                except Exception as validation_error:
-                    logger.error(f"Validation error: {validation_error}")
-                    enhanced_orders.append(fixed_order)
-                    
-            except Exception as order_error:
-                logger.error(f"Error processing order: {order_error}")
+                optimized_orders.append({
+                    "order_id": fixed_order.get("id"),
+                    "created_at": fixed_order.get("created_at"),
+                    "delivered_at": fixed_order.get("delivered_at"),  # may be None
+                    "total_amount": fixed_order.get("total_amount", 0),
+                    "order_type": fixed_order.get("order_type"),
+                    "order_status": fixed_order.get("order_status"),
+                })
+
+            except Exception as e:
+                logger.error(f"Error processing order {order.get('id')}: {e}")
                 continue
 
         result = {
-            "orders": enhanced_orders,
+            "orders": optimized_orders,
             "pagination": {
                 "currentPage": page,
                 "totalPages": total_pages,
@@ -480,14 +548,12 @@ async def get_my_orders(
                 "hasPrevPage": page > 1
             }
         }
-        
-        logger.info(f"✅ Returning {len(enhanced_orders)} fresh orders for page {page}")
+
+        logger.info(f"✅ Returning {len(optimized_orders)} orders for page {page}")
         return result
-        
+
     except Exception as e:
-        logger.error(f"Get my orders error: {e}")
-        import traceback
-        logger.error(f"Full traceback: {traceback.format_exc()}")
+        logger.error(f"Get my orders error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get orders"

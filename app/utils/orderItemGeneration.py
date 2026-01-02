@@ -10,13 +10,13 @@ async def validateProductsItems(item: dict, db):
     if product.get("stock", 0) < item['quantity']:
         raise HTTPException(400, f"Insufficient stock for {product['name']}")
     
-    item_total = product["price"] * item['quantity']
+    item_total = product["selling_price"] * item['quantity']
     
     validated_item = {
         "type": "product",
         "product_id": item['product_id'],
         "quantity": item['quantity'],
-        "price": product["price"],
+        "price": product["selling_price"],
         "subtotal": item_total
     }
     
