@@ -29,8 +29,8 @@ class ProductRequestStatus(str, Enum):
 
 class SupportTicketCreate(BaseModel):
     category: SupportCategory
-    subject: str = Field(..., min_length=5, max_length=200)
-    message: str = Field(..., min_length=10, max_length=2000)
+    subject: str = Field(..., min_length=1, max_length=200)
+    message: str = Field(..., min_length=1, max_length=2000)
     order_id: Optional[str] = None
 
 class SupportTicketResponse(BaseModel):
