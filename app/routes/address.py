@@ -2,7 +2,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 import logging
 from typing import List
-from app.utils.get_time import add_ist_timestamps, now_utc  # ✅ Import timezone utility
+from app.utils.get_time import add_ist_timestamps, now_utc
 from app.utils.auth import get_current_user
 from db.db_manager import DatabaseManager, get_database
 from schema.address import AddressCreate, AddressUpdate, AddressResponse, GeocodeRequest, ReverseGeocodeRequest, AddressSearchRequest
@@ -22,12 +22,7 @@ load_dotenv()
 OLA_API_KEY = os.getenv('OLA_KRUTRIM_API_KEY')
 OLA_BASE_URL = os.getenv('OLA_BASE_URL')
 
-# ✅ Helper function to geocode address and get coordinates
 async def get_coordinates_from_address(street: str, city: str, state: str, pincode: str) -> tuple[Optional[float], Optional[float]]:
-    """
-    Geocode an address to get latitude and longitude
-    Returns: (latitude, longitude) or (None, None) if failed
-    """
     try:
         # Build full address string
         full_address = f"{street}, {city}"
@@ -68,7 +63,6 @@ async def get_coordinates_from_address(street: str, city: str, state: str, pinco
     except Exception as e:
         logger.error(f"❌ Geocoding error: {e}")
         return (None, None)
-
 
 @router.post("/", response_model=AddressResponse)
 async def create_address(
@@ -153,7 +147,6 @@ async def create_address(
             detail="Failed to create address"
         )
 
-
 @router.get("/my", response_model=List[AddressResponse])
 async def get_user_addresses(
     current_user=Depends(get_current_user),
@@ -176,7 +169,6 @@ async def get_user_addresses(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get addresses"
         )
-
 
 @router.post("/{address_id}/set-default")
 async def set_default_address(
@@ -330,7 +322,6 @@ async def update_address(
             detail="Failed to update address"
         )
 
-
 @router.delete("/{address_id}")
 async def delete_address(
     address_id: str,
@@ -385,7 +376,6 @@ async def delete_address(
             detail="Failed to delete address"
         )
 
-
 @router.post("/search-addresses")
 async def search_addresses_proxy(request: AddressSearchRequest):
     """Proxy for Ola Maps address search"""
@@ -412,7 +402,6 @@ async def search_addresses_proxy(request: AddressSearchRequest):
     except Exception as e:
         logger.error(f"Address search proxy error: {e}")
         return {"predictions": []}
-
 
 @router.post("/geocode")
 async def geocode_address(request: GeocodeRequest):
@@ -448,7 +437,6 @@ async def geocode_address(request: GeocodeRequest):
         logger.error(f"Geocode proxy error: {e}")
         raise HTTPException(status_code=500, detail="Geocoding failed")
 
-
 @router.post("/reverse-geocode")
 async def reverse_geocode_proxy(request: ReverseGeocodeRequest):
     """Proxy for Ola Maps reverse geocoding"""
@@ -482,3 +470,30 @@ async def reverse_geocode_proxy(request: ReverseGeocodeRequest):
     except Exception as e:
         logger.error(f"Reverse geocode proxy error: {e}")
         raise HTTPException(status_code=500, detail="Reverse geocoding failed")
+
+@router.get("/validate-pincode/{pincode}")
+async def validate_pincode(
+    pincode: str,
+    db: DatabaseManager = Depends(get_database)
+):
+    try:
+        result = await db.find_one('pincodes',{'pincode':pincode})
+        print("pin data: ",result)
+        if not result or result['status'] == False:
+            logger.info("pincode is not available")
+            return {
+                "message": "Delivery is not available at you pincode!"
+            }
+
+        data = {
+            "pincode": result['pincode'],
+            "city": result['city'],
+            "state": result['state']
+        }
+        return{
+            "status": True,
+            "data": data
+        }        
+    except Exception as e:
+        logger.error("pincode validation failed: ",e)
+        raise e
