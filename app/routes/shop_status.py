@@ -57,13 +57,10 @@ async def get_shop_status(db: DatabaseManager = Depends(get_database)):
             "is_open": status_doc.get("is_open", True),
             "reopen_time": status_doc.get("reopen_time"),
             "reason": status_doc.get("reason"),
-            "updated_at": status_doc.get("updated_at", datetime.utcnow()).isoformat() if hasattr(status_doc.get("updated_at"), 'isoformat') else str(status_doc.get("updated_at", datetime.utcnow().isoformat())),
-            "updated_by": status_doc.get("updated_by", "admin")
         }
         
         logger.info(f"✅ Shop status from DB: is_open={response['is_open']}, reason={response.get('reason')}")
         
-        # ✅ REMOVED: No caching - return fresh data every time
         return response
         
     except Exception as e:
