@@ -110,7 +110,6 @@ async def create_draft_order(
             "expires_at": expires_at,
         }
 
-        # Store in Redis or temporary collection
         try:
             redis = get_redis()
             await redis.setex(
@@ -202,11 +201,17 @@ async def confirm_order(
                 })
             
             elif item["type"] == "printout":
+                file_urls = []
+                if item["service_data"].get("document_urls"):
+                    file_urls = item["service_data"].get("document_urls")
+                else:
+                    file_urls = item["service_data"].get("photo_urls")
                 transformed_items.append({
                     "type": "printout",
                     "service_data": {
                         **item["service_data"],
-                        "file_urls": item["service_data"].get("file_urls", []),
+                        
+                        "file_urls": file_urls,
                         "price": item["price"]
                     }
                 })
@@ -269,15 +274,8 @@ async def confirm_order(
         created_order = await db.find_one("orders", {"_id": ObjectId(order_id)})
          
         try:
-            from app.routes.notifications import create_notification
-            
-            # order_type = draft_order['order_type']
-            # if order_type == 'printout':
-            #     notification_title = "Printout Order Placed! 🖨️"
-            #     notification_message = f"Your printout order #{created_order.get('id', order_id)} has been received and will be ready soon."
-            # else:
             notification_title = "Order Placed Successfully! ✅"
-            notification_message = f"Your order #{created_order.get('id', order_id)} has been placed and will be confirmed shortly."
+            notification_message = f"Your order #{created_order.get('id', order_id)} has been placed and will be Delivered shortly."
             
             await create_notification(
                 db=db,
@@ -402,96 +400,6 @@ async def create_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create order"
         )
-        
-# @router.get("/my")
-# async def get_my_orders(
-#     page: int = Query(1, ge=1),
-#     limit: int = Query(10, ge=1, le=50),
-#     current_user: UserinDB = Depends(current_active_user),
-#     db: DatabaseManager = Depends(get_database)
-# ):
-#     """Get user's order history - NO CACHING for real-time status updates"""
-#     try:
-#         logger.info(f"Fetching orders for user {current_user.id}")
-        
-#         skip = (page - 1) * limit
-#         total_orders = await db.count_documents("orders", {"user": current_user.id})
-#         total_pages = (total_orders + limit - 1) // limit if total_orders > 0 else 0
-        
-#         orders = await db.find_many(
-#             "orders", 
-#             {"user": current_user.id},
-#             sort=[("created_at", -1)],
-#             skip=skip,
-#             limit=limit
-#         )
-        
-#         # Process orders
-#         enhanced_orders = []
-#         for order in orders:
-#             try:
-#                 # Process items
-#                 if "items" in order and isinstance(order["items"], list):
-#                     for item in order["items"]:
-#                         try:
-#                             if isinstance(item.get('product'), str):
-#                                 product_id = item['product']
-#                             elif isinstance(item.get('product'), ObjectId):
-#                                 product_id = item['product']
-#                                 item['product'] = str(item['product'])
-#                             else:
-#                                 continue
-
-#                             product = await db.find_one("products", {"id": product_id})
-#                             if product:
-#                                 item["product_name"] = product["name"]
-#                                 item["product_image"] = product.get("images", [])
-#                             else:
-#                                 item["product_name"] = "Product not found"
-#                                 item["product_image"] = []
-                                
-#                         except Exception as item_error:
-#                             logger.error(f"Error processing item: {item_error}")
-#                             item["product_name"] = "Error loading product"
-#                             item["product_image"] = []
-                
-#                 # Fix MongoDB types
-#                 fixed_order = fix_mongo_types(order)
-
-#                 try:
-#                     validated_order = OrderResponseEnhanced(**fixed_order)
-#                     order_dict = validated_order.model_dump(by_alias=True)
-#                     enhanced_orders.append(order_dict)
-#                 except Exception as validation_error:
-#                     logger.error(f"Validation error: {validation_error}")
-#                     enhanced_orders.append(fixed_order)
-                    
-#             except Exception as order_error:
-#                 logger.error(f"Error processing order: {order_error}")
-#                 continue
-
-#         result = {
-#             "orders": enhanced_orders,
-#             "pagination": {
-#                 "currentPage": page,
-#                 "totalPages": total_pages,
-#                 "totalOrders": total_orders,
-#                 "hasNextPage": page < total_pages,
-#                 "hasPrevPage": page > 1
-#             }
-#         }
-        
-#         logger.info(f"✅ Returning {len(enhanced_orders)} fresh orders for page {page}")
-#         return result
-        
-#     except Exception as e:
-#         logger.error(f"Get my orders error: {e}")
-#         import traceback
-#         logger.error(f"Full traceback: {traceback.format_exc()}")
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="Failed to get orders"
-#         )
 
 @router.get("/my")
 async def get_my_orders(
@@ -572,10 +480,7 @@ async def get_active_order(
             return None
             
         logger.info(f"Fetching active order for user: {current_user.email}")
-        
-        # ✅ REMOVED CACHING - Always fetch fresh for active orders
-        
-        # ✅ Optimized aggregation - populate products in single query
+
         pipeline = [
             {
                 "$match": {
@@ -630,8 +535,7 @@ async def get_active_order(
             try:
                 partner = await db.find_one(
                     "users",
-                    {"id": order["delivery_partner"]},
-                    projection={"name": 1, "phone": 1, "rating": 1, "total_deliveries": 1}
+                    {"id": order["delivery_partner"]}
                 )
                 if partner:
                     order["delivery_partner"] = {
