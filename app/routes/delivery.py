@@ -133,83 +133,11 @@ async def get_assigned_orders_for_delivery(
 
     return response
 
-# @router.get("/delivered")
-# async def get_delivered_orders_for_delivery(
-#     current_user: UserinDB = Depends(current_active_user),
-#     db: DatabaseManager = Depends(get_database)
-# ):
-#     """Get orders that have been delivered by the current delivery partner"""
-#     try:
-#         # Check if user is a delivery partner
-#         if current_user.role != "delivery_partner":
-#             raise HTTPException(
-#                 status_code=status.HTTP_403_FORBIDDEN,
-#                 detail="Access denied. Only delivery partners can access this endpoint."
-#             )
-        
-#         # Find delivered orders by this delivery partner
-#         orders = await db.find_many(
-#             "orders",
-#             {
-#                 "delivery_partner": current_user.id,
-#                 "order_status": "delivered"
-#             },
-#             sort=[("updated_at", -1)]  # Sort by delivery date
-#         )
-        
-#         enhanced_orders = []
-#         for order in orders:
-#             try:
-#                 # Get user info for each order
-#                 user_info = await db.find_one("users", {"id": order["user"]})
-#                 if user_info:
-#                     order["user_info"] = {
-#                         "name": user_info.get("name", "N/A"),
-#                         "phone": user_info.get("phone", "N/A"),
-#                         "email": user_info.get("email", "N/A")
-#                     }
-                
-#                 # Process items to add product details
-#                 if "items" in order and isinstance(order["items"], list):
-#                     for item in order["items"]:
-#                         try:
-#                             if isinstance(item.get('product'), (str, ObjectId)):
-#                                 product_id = item['product']
-#                                 product = await db.find_one("products", {"id": product_id})
-#                                 if product:
-#                                     item["product_name"] = product["name"]
-#                                     item["product_image"] = product.get("images", [])
-#                                 item['product'] = str(item['product'])  # Convert to string
-#                         except Exception as item_error:
-#                             logger.error(f"Error processing item: {item_error}")
-#                             item["product_name"] = "Error loading product"
-#                             item["product_image"] = []
-                
-#                 fixed_order = fix_mongo_types(order)
-#                 enhanced_orders.append(fixed_order)
-                
-#             except Exception as order_error:
-#                 logger.error(f"Error processing order {order.get('id')}: {order_error}")
-#                 continue
-        
-#         logger.info(f"Returning {len(enhanced_orders)} delivered orders for delivery partner {current_user.id}")
-#         return enhanced_orders
-        
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         logger.error(f"Get delivered orders error: {e}")
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="Failed to get delivered orders"
-#         )
-
 @router.get("/delivered")
 async def get_delivered_orders_for_delivery(
     current_user: UserinDB = Depends(current_active_user),
     db: DatabaseManager = Depends(get_database)
 ):
-    """Get delivered orders for the current delivery partner (optimized)"""
     try:
         # Only delivery partners can access
         if current_user.role != "delivery_partner":
@@ -225,7 +153,7 @@ async def get_delivered_orders_for_delivery(
                 "delivery_partner": current_user.id,
                 "order_status": "delivered"
             },
-            sort=[("updated_at", -1)]  # Most recently delivered first
+            sort=[("updated_at", -1)]
         )
 
         delivered_summary = []
@@ -293,15 +221,23 @@ async def get_delivery_order_details(
         "delivery_address": order.get("delivery_address"),
         "items": [],
     }
-
+    print("res: ",response)
     # Add items (minimal)
     for item in order.get("items", []):
         if item["type"] == "product":
-            response["items"].append({
-                "type": "product",
-                "name": item.get("product_name"),
-                "qty": item.get("quantity"),
-            })
+            product = await db.find_one("products",{'id':item["product"]})
+            if product:
+                response["items"].append({
+                    "type": "product",
+                    "name": product.get("name"),
+                    "quantity": item.get("quantity"),
+                })
+            else:
+                response["items"].append({
+                    "type": "product",
+                    "name": "Not Available",
+                    "quantity": item.get("quantity"),
+                })
 
         if item["type"] == "porter":
             s = item["service_data"]
@@ -315,7 +251,7 @@ async def get_delivery_order_details(
             response["items"].append({
                 "type": "printout",
             })
-
+    print("After res: ",response)
     return response
 
 @router.post("/{order_id}/accept")
