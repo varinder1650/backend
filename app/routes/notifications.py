@@ -133,25 +133,32 @@ async def get_notifications(
     db: DatabaseManager = Depends(get_database)
 ):
     """
-    Get all notifications for the current user from the last 3 days
+    Get only UNREAD notifications for the current user from the last 3 days
     """
     try:
         three_days_ago = datetime.utcnow() - timedelta(days=3)
         
-        logger.info(f"Fetching notifications for user {current_user.id} from last 3 days (since {three_days_ago})")
+        logger.info(f"Fetching unread notifications for user {current_user.id} from last 3 days (since {three_days_ago})")
         
         notifications = await db.find_many(
             "notifications",
             {
-                "$or": [
+                "$and": [
+                    {"created_at": {"$gte": three_days_ago}},
                     {
-                        "user_id": current_user.id, 
-                        "for": "specific_user",
-                        "created_at": {"$gte": three_days_ago}
-                    },
-                    {
-                        "for": "all_users",
-                        "created_at": {"$gte": three_days_ago}
+                        "$or": [
+                            # Specific user notifications that are unread
+                            {
+                                "user_id": current_user.id, 
+                                "for": "specific_user",
+                                "read": False
+                            },
+                            # Broadcast notifications that user hasn't read yet
+                            {
+                                "for": "all_users",
+                                "read_by": {"$ne": current_user.id}
+                            }
+                        ]
                     }
                 ]
             },
@@ -170,10 +177,7 @@ async def get_notifications(
                     "message": notif["message"],
                     "type": notif["type"],
                     "for": notif.get("for", "specific_user"),
-                    "read": (
-                        notif.get("read", False) if notif.get("for") == "specific_user"
-                        else current_user.id in notif.get("read_by", [])
-                    ),
+                    "read": False, # We are only fetching unread, so this is always False
                     "created_at": notif.get("created_at") or notif["created_at"].isoformat(),
                     "order_id": notif.get("order_id")
                 }
@@ -185,6 +189,65 @@ async def get_notifications(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch notifications"
+        )
+
+@router.patch('/clear-all')
+async def clear_all_notifications(
+    current_user: UserinDB = Depends(current_active_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """Mark all unread notifications from the last 3 days as read"""
+    try:
+        three_days_ago = datetime.utcnow() - timedelta(days=3)
+        current_time = get_ist_datetime_for_db()
+
+        # 1. Update specific user notifications
+        await db.update_many(
+            "notifications",
+            {
+                "user_id": current_user.id,
+                "for": "specific_user",
+                "read": False,
+                "created_at": {"$gte": three_days_ago}
+            },
+            {
+                "$set": {
+                    "read": True,
+                    "read_at": current_time['ist'],
+                    "read_at_ist": current_time['ist_string']
+                }
+            }
+        )
+
+        # 2. Update broadcast notifications
+        await db.update_many(
+            "notifications",
+            {
+                "for": "all_users",
+                "read_by": {"$ne": current_user.id},
+                "created_at": {"$gte": three_days_ago}
+            },
+            {
+                "$addToSet": {
+                    "read_by": current_user.id
+                },
+                "$set": {
+                    f"read_by_details.{current_user.id}": {
+                        "read_at": current_time['ist'],
+                        "read_at_ist": current_time['ist_string']
+                    }
+                }
+            }
+        )
+        
+        logger.info(f"Cleared all notifications for user {current_user.id}")
+        return {"message": "All notifications marked as read"}
+
+    except Exception as e:
+        logger.error(f"Error clearing all notifications: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear notifications"
         )
 
 @router.put('/{notification_id}/read')
