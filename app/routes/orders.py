@@ -3,7 +3,7 @@ import json
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 import logging
-from typing import Optional
+from typing import Optional, List
 from app.cache.redis_manager import get_redis
 from app.services.order_service import OrderService
 from app.services.email_service import email_service
@@ -469,17 +469,17 @@ async def get_my_orders(
 
 
 @router.get("/active")
-async def get_active_order(
+async def get_active_orders(
     current_user = Depends(get_current_user),
     db: DatabaseManager = Depends(get_database)
-) -> Optional[dict]:
-    """Get user's most recent active order - NO CACHING for real-time status"""
+) -> List[dict]:
+    """Get all user's active orders - NO CACHING for real-time status"""
     try:
         if not current_user:
             logger.info("No authenticated user found")
-            return None
+            return []
             
-        logger.info(f"Fetching active order for user: {current_user.email}")
+        logger.info(f"Fetching active orders for user: {current_user.email}")
 
         pipeline = [
             {
@@ -491,7 +491,6 @@ async def get_active_order(
                 }
             },
             {"$sort": {"created_at": -1}},
-            {"$limit": 1},
             {
                 "$lookup": {
                     "from": "products",
@@ -506,77 +505,81 @@ async def get_active_order(
         
         orders = await db.aggregate("orders", pipeline)
         
-        if not orders or len(orders) == 0:
-            logger.info(f"No active order found for user {current_user.email}")
-            return None
-        
-        order = orders[0]
-        
-        # ✅ Map products to items efficiently
-        if "product_details" in order:
-            product_map = {p["id"]: p for p in order["product_details"]}
+        if not orders:
+            logger.info(f"No active orders found for user {current_user.email}")
+            return []
             
-            for item in order.get("items", []):
-                product_id = item.get('product')
-                product = product_map.get(product_id)
+        active_orders = []
+
+        for order in orders:
+            # ✅ Map products to items efficiently
+            if "product_details" in order:
+                product_map = {p["id"]: p for p in order["product_details"]}
                 
-                if product:
-                    item["product_name"] = product.get("name", "Unknown Product")
-                    item["product_image"] = product.get("images", [])
-                else:
-                    item["product_name"] = "Product not found"
-                    item["product_image"] = []
+                for item in order.get("items", []):
+                    # Only map product details if it's a product type item or has a product field
+                    if item.get("type") == "product" or item.get("product"):
+                        product_id = item.get('product')
+                        product = product_map.get(product_id)
+                        
+                        if product:
+                            item["product_name"] = product.get("name", "Unknown Product")
+                            item["product_image"] = product.get("images", [])
+                        else:
+                            item["product_name"] = "Product not found"
+                            item["product_image"] = []
             
-            # Remove product_details from response
-            del order["product_details"]
-        
-        # Get delivery partner info if assigned
-        if order.get('delivery_partner'):
-            try:
-                partner = await db.find_one(
-                    "users",
-                    {"id": order["delivery_partner"]}
+                # Remove product_details from response
+                del order["product_details"]
+            
+            # Get delivery partner info if assigned
+            if order.get('delivery_partner'):
+                try:
+                    partner = await db.find_one(
+                        "users",
+                        {"id": order["delivery_partner"]}
+                    )
+                    if partner:
+                        order["delivery_partner"] = {
+                            "name": partner.get("name"),
+                            "phone": partner.get("phone"),
+                            "rating": partner.get("rating", 4.5),
+                            "deliveries": partner.get("total_deliveries", 0)
+                        }
+                except Exception as partner_error:
+                    logger.warning(f"Error fetching delivery partner: {partner_error}")
+            
+            # Add status message
+            if not order.get("status_message"):
+                status_messages = {
+                    "confirmed": "Your order has been confirmed and will be prepared soon.",
+                    "preparing": "We are preparing your order",
+                    "assigned": "Delivery Partner Assigned",
+                    "out_for_delivery": "Your order is on its way to you.",
+                    "arrived": "Delivery partner has arrived at your location!"
+                }
+                order["status_message"] = status_messages.get(
+                    order["order_status"], 
+                    "Your order is being processed."
                 )
-                if partner:
-                    order["delivery_partner"] = {
-                        "name": partner.get("name"),
-                        "phone": partner.get("phone"),
-                        "rating": partner.get("rating", 4.5),
-                        "deliveries": partner.get("total_deliveries", 0)
-                    }
-            except Exception as partner_error:
-                logger.warning(f"Error fetching delivery partner: {partner_error}")
+            
+            # Serialize
+            serialized_order = fix_mongo_types(order)
+            active_orders.append(serialized_order)
         
-        # Add status message
-        if not order.get("status_message"):
-            status_messages = {
-                "confirmed": "Your order has been confirmed and will be prepared soon.",
-                "preparing": "We are preparing your order",
-                "assigned": "Delivery Partner Assigned",
-                "out_for_delivery": "Your order is on its way to you.",
-                "arrived": "Delivery partner has arrived at your location!"
-            }
-            order["status_message"] = status_messages.get(
-                order["order_status"], 
-                "Your order is being processed."
-            )
+        logger.info(f"✅ Returning {len(active_orders)} active orders")
         
-        # Serialize
-        serialized_order = fix_mongo_types(order)
-        
-        logger.info(f"✅ Returning active order {serialized_order.get('id')} ({len(order.get('items', []))} items)")
-        
-        return serialized_order
+        return active_orders
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching active order: {e}")
+        logger.error(f"Error fetching active orders: {e}")
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=500, 
-            detail="Failed to fetch active order"
+            detail="Failed to fetch active orders"
         )
 
 # Background task helpers
