@@ -191,8 +191,8 @@ async def get_notifications(
             detail="Failed to fetch notifications"
         )
 
-@router.patch('/clear-all')
-async def clear_all_notifications(
+@router.patch('/mark-all-read')
+async def mark_all_notifications_read(
     current_user: UserinDB = Depends(current_active_user),
     db: DatabaseManager = Depends(get_database)
 ):
@@ -240,14 +240,14 @@ async def clear_all_notifications(
             }
         )
         
-        logger.info(f"Cleared all notifications for user {current_user.id}")
+        logger.info(f"Marked all notifications as read for user {current_user.id}")
         return {"message": "All notifications marked as read"}
 
     except Exception as e:
-        logger.error(f"Error clearing all notifications: {str(e)}")
+        logger.error(f"Error marking all notifications as read: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to clear notifications"
+            detail="Failed to mark notifications as read"
         )
 
 @router.put('/{notification_id}/read')
