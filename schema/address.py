@@ -4,6 +4,7 @@ from datetime import datetime
 
 class AddressBase(BaseModel):
     label: str = Field(..., min_length=1, max_length=50)
+    name: str = Field(..., min_length=1, max_length=100)
     street: str = Field(..., min_length=1, max_length=200)
     city: str = Field(..., min_length=1, max_length=100)
     state: str = Field(..., min_length=1, max_length=100)
@@ -18,6 +19,7 @@ class AddressCreate(AddressBase):
 
 class AddressUpdate(BaseModel):
     label: Optional[str] = None
+    name: Optional[str] = None
     street: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
@@ -31,6 +33,7 @@ class AddressResponse(BaseModel):
     id: str = Field(..., alias="_id")
     user_id: str
     label: str = Field(..., min_length=1, max_length=50)
+    name: str = Field(..., min_length=1, max_length=100)
     street: str = Field(..., min_length=1, max_length=200)
     city: str = Field(..., min_length=1, max_length=100)
     state: str = Field(..., min_length=1, max_length=100)
