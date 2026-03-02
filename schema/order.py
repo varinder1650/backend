@@ -5,6 +5,7 @@ from bson import ObjectId
 from schema.products import ProductResponse
 
 class DeliveryAddress(BaseModel):
+    name: Optional[str] = None
     street: str
     city: str
     state: str
@@ -23,31 +24,45 @@ class ProductOrderItem(BaseModel):
     price: float = Field(gt=0)
 
 class PrintServiceData(BaseModel):
-    file_urls: List[str]
+    print_type: Optional[str] = "document"
+    pages: int = 1
+    file_urls: Optional[List[str]] = None
+    document_urls: Optional[List[str]] = None
+    photo_urls: Optional[List[str]] = None
     copies: int = Field(gt=0)
     color: bool
     paper_size: str
     notes: Optional[str] = ""
-    price: float = Field(ge=0)
+    price: float = Field(default=0, ge=0)
+
+    class Config:
+        extra = "ignore"
 
 class PrintOrderItem(BaseModel):
     type: Literal["printout"]
     service_data: PrintServiceData
 
 class Dimensions(BaseModel):
-    length: str
-    width: str
-    height: str
+    length: Optional[str] = None
+    width: Optional[str] = None
+    height: Optional[str] = None
+
+    class Config:
+        extra = "ignore"
 
 class PorterServiceData(BaseModel):
     pickup_address: DeliveryAddress
     delivery_address: DeliveryAddress
-    dimensions: Dimensions
+    dimensions: Optional[Dimensions] = None
     weight_category: int
     estimated_distance: float
-    estimated_cost: int
+    estimated_cost: float
     notes: Optional[str] = ""
-    is_urgent:bool
+    is_urgent: bool
+    phone: Optional[str] = None
+
+    class Config:
+        extra = "ignore"
 
 class PorterOrderItem(BaseModel):
     type: Literal["porter"]

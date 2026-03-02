@@ -853,11 +853,28 @@ async def get_order_by_id(
         
         # Get delivery partner information if assigned
         delivery_partner_info = None
-        if order.get("delivery_partner_id"):
+        if order.get("delivery_partner"):
             delivery_partner_info = await db.find_one(
                 "users",
-                {"id": order["delivery_partner_id"]}
+                {"id": order["delivery_partner"]}
             )
+            
+        # Fetch product names and images for the order items
+        product_ids = [item.get("product") for item in order.get("items", []) if item.get("type") == "product" or item.get("product")]
+        if product_ids:
+            products = await db.find_many("products", {"id": {"$in": product_ids}})
+            product_map = {p["id"]: p for p in products}
+            
+            for item in order.get("items", []):
+                if item.get("type") == "product" or item.get("product"):
+                    product_id = item.get('product')
+                    product = product_map.get(product_id)
+                    if product:
+                        item["product_name"] = product.get("name", "Unknown Product")
+                        item["product_image"] = product.get("images", [])
+                    else:
+                        item["product_name"] = "Product not found"
+                        item["product_image"] = []
         
         # Serialize order data
         serialized_order = {

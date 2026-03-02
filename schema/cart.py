@@ -18,10 +18,10 @@ class PrintoutServiceDetails(BaseModel):
     notes: Optional[str] = None
 
 class CartRequest(BaseModel):
+    serviceType: Optional[Literal['product','porter','printout']] = 'product'
     id: Optional[str] = None
     quantity: int = 1
 
-    serviceType: Optional[Literal['product','porter','prinout']] = 'product'
     serviceName: Optional[str] = None
     servicePrice: Optional[float] = None
     serviceDetails: Optional[Dict[str,Any]] = None
@@ -29,11 +29,14 @@ class CartRequest(BaseModel):
     # Validators
     _validate_quantity = validator('quantity', allow_reuse=True)(quantity_validator)
     
-    @validator('id')
-    def validate_product_id(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Product ID is required')
-        return v.strip()
+    @validator('id', always=True)
+    def validate_product_id(cls, v, values):
+        # Only require product ID if the service type is product
+        if values.get('serviceType', 'product') == 'product':
+            if not v or not str(v).strip():
+                raise ValueError('Product ID is required')
+            return str(v).strip()
+        return v
 
 class UpdateCartItemRequest(BaseModel):
     itemId: str = Field(..., min_length=1, max_length=100)
