@@ -165,9 +165,11 @@ async def get_user_addresses(
         
     except Exception as e:
         logger.error(f"Get addresses error: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get addresses"
+            detail=f"Failed to get addresses: {str(e)}"
         )
 
 @router.post("/{address_id}/set-default")
