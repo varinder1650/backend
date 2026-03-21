@@ -7,7 +7,7 @@ from schema.user import UserinDB
 import logging
 from app.routes.notifications import create_notification
 from app.services.email_service import email_service
-from app.utils.get_time import get_ist_datetime_for_db
+from datetime import datetime
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -105,8 +105,8 @@ async def get_assigned_orders_for_delivery(
             "payment_amount": order.get("total_amount", 0),
 
             "customer": {
-                "name": user.get("name", "N/A"),
-                "phone": user.get("phone", "N/A"),
+                "name": order.get("delivery_address", {}).get("name") or user.get("name", "N/A"),
+                "phone": order.get("delivery_address", {}).get("mobile_number") or user.get("phone", "N/A"),
             },
 
             "delivery": None,
@@ -215,8 +215,8 @@ async def get_delivery_order_details(
         if order.get("payment_method") == "cod"
         else None,
         "customer": {
-            "name": user.get("name"),
-            "phone": user.get("phone"),
+            "name": order.get("delivery_address", {}).get("name") or user.get("name"),
+            "phone": order.get("delivery_address", {}).get("mobile_number") or user.get("phone"),
         },
         "delivery_address": order.get("delivery_address"),
         "items": [],
@@ -312,24 +312,20 @@ async def accept_delivery_order(
             )
         accepted_partners.append(current_user.id)
         
-        current_time = get_ist_datetime_for_db()
+        current_time = datetime.utcnow()
         status_history_entry = {
             "status": "assigning",
-            "changed_at": current_time['ist'],
-            "changed_at_ist": current_time['ist_string'],
+            "changed_at": current_time,
             "changed_by": current_user.name,
             "partner_id": current_user.id,
             "message": f"{current_user.name} accepted the order"
         }
-        # print(status_history_entry)
         update_data = {
             "$set": {
                 "accepted_partners": accepted_partners,
                 "order_status": "assigning",
-                "accepted_at": current_time['ist'],
-                "accepted_at_ist": current_time['ist_string'],
-                "updated_at": current_time['ist'],
-                "updated_at_ist": current_time['ist_string'],
+                "accepted_at": current_time,
+                "updated_at": current_time,
                 "status_message": f"Order accepted by {current_user.name}"
             },
             "$push": {
@@ -400,8 +396,8 @@ async def mark_order_as_delivered(
                 detail=f"Order with status '{order.get('order_status')}' cannot be marked as delivered"
             )
         
-        current_time = get_ist_datetime_for_db()
-        
+        current_time = datetime.utcnow()
+
         # Mark the order as delivered with proper timeline
         await db.update_one(
             "orders",
@@ -409,18 +405,15 @@ async def mark_order_as_delivered(
             {
                 "$set": {
                     "order_status": "delivered",
-                    "delivered_at":current_time['ist'],
-                    "delivered_at_ist": current_time['ist_string'],
+                    "delivered_at": current_time,
                     "payment_status": "completed" if order.get("payment_method") == "cod" else order.get("payment_status"),
-                    "updated_at": current_time['ist'],
-                    "updated_at_ist": current_time['ist_string'],
+                    "updated_at": current_time,
                     "status_message": "Order delivered successfully!"
                 },
                 "$push": {
                     "status_change_history": {
                         "status": "delivered",
-                        "changed_at": current_time['ist'],
-                        "changed_at_ist": current_time['ist_string'],
+                        "changed_at": current_time,
                         "changed_by": current_user.name,
                         "message": f"Order delivered by {current_user.name}"
                     }
