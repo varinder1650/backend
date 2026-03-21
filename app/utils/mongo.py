@@ -1,7 +1,6 @@
 def fix_mongo_types(doc):
     from bson import ObjectId
     from datetime import datetime
-    from app.utils.get_time import utc_to_ist
 
     if isinstance(doc, dict):
         return {k: fix_mongo_types(v) for k, v in doc.items()}
@@ -10,7 +9,11 @@ def fix_mongo_types(doc):
     elif isinstance(doc, ObjectId):
         return str(doc)
     elif isinstance(doc, datetime):
-        doc = utc_to_ist(doc)
-        return doc.isoformat()  # Convert datetime to ISO string
+        # Always output as UTC ISO string with Z suffix
+        # Frontend will convert to the user's local timezone
+        iso = doc.isoformat()
+        if not iso.endswith("Z") and "+" not in iso:
+            iso += "Z"
+        return iso
     else:
         return doc

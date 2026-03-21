@@ -327,6 +327,7 @@ class OrderService:
         order_dict['user'] = current_user.id
         order_dict['id'] = id
         order_dict['created_at'] = datetime.utcnow()
+        order_dict['updated_at'] = datetime.utcnow()
         order_dict['status_change_history'] = [{
             "status": "preparing",
             "changed_at": datetime.utcnow(),
