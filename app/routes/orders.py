@@ -18,7 +18,7 @@ from schema.user import UserinDB
 from app.utils.mongo import fix_mongo_types
 from app.utils.id_generator import get_id_generator
 from pydantic import BaseModel, Field
-from app.utils.get_time import get_ist_datetime_for_db,utc_to_ist
+from app.utils.get_time import get_ist_datetime_for_db, utc_to_ist, utc_isoformat
 
 id_generator = get_id_generator()
 
@@ -45,12 +45,12 @@ async def create_draft_order(
                 subtotal += item_price
             
             elif item['type'] == "porter":
-                validated_item, item_price = await validatePorterItems(item)
+                validated_item, item_price = await validatePorterItems(item, db)
                 validated_items.append(validated_item)
                 porterPrice += item_price
             
             elif item['type'] == "printout":
-                validated_item, item_price = await validatePrintItems(item)
+                validated_item, item_price = await validatePrintItems(item, db)
                 validated_items.append(validated_item)
                 subtotal += item_price
         
@@ -132,7 +132,7 @@ async def create_draft_order(
             app_fee=appFee,
             tip_amount=draft_data.tip_amount,
             discount=discount,
-            expires_at=expires_at.isoformat()
+            expires_at=utc_isoformat(expires_at)
         )
         
     except HTTPException:
@@ -895,11 +895,11 @@ async def get_order_by_id(
             "estimated_delivery_time": order.get("estimated_delivery_time", 30),
             "actual_delivery": order.get("actual_delivery"),
             "status_message": order.get("status_message"),
-            "created_at": order["created_at"].isoformat() if order.get("created_at") else None,
-            "updated_at": order.get("updated_at").isoformat() if order.get("updated_at") else None,
-            "assigned_at": order.get("assigned_at").isoformat() if order.get("assigned_at") else None,
-            "out_for_delivery_at": order.get("out_for_delivery_at").isoformat() if order.get("out_for_delivery_at") else None,
-            "delivered_at": order.get("delivered_at").isoformat() if order.get("delivered_at") else None,
+            "created_at": utc_isoformat(order.get("created_at")),
+            "updated_at": utc_isoformat(order.get("updated_at")),
+            "assigned_at": utc_isoformat(order.get("assigned_at")),
+            "out_for_delivery_at": utc_isoformat(order.get("out_for_delivery_at")),
+            "delivered_at": utc_isoformat(order.get("delivered_at")),
         }
         
         # Add delivery partner info if available
@@ -916,7 +916,7 @@ async def get_order_by_id(
             serialized_order["status_change_history"] = [
                 {
                     "status": item["status"],
-                    "changed_at": item["changed_at"].isoformat() if hasattr(item.get("changed_at"), 'isoformat') else str(item.get("changed_at")),
+                    "changed_at": utc_isoformat(item.get("changed_at")) if hasattr(item.get("changed_at"), 'isoformat') else str(item.get("changed_at")),
                     "changed_by": item.get("changed_by", "system")
                 }
                 for item in order.get("status_change_history", [])

@@ -2,6 +2,7 @@ from bson import ObjectId
 from fastapi import HTTPException,APIRouter, Depends, status,BackgroundTasks
 from app.utils.auth import current_active_user
 from app.utils.mongo import fix_mongo_types
+from app.utils.get_time import utc_isoformat
 from db.db_manager import DatabaseManager, get_database
 from schema.user import UserinDB
 import logging
@@ -41,7 +42,7 @@ async def get_available_orders_for_delivery(
         for order in orders:
             response.append({
                 "id": order.get("id"),
-                "created_at": order.get("created_at"),
+                "created_at": utc_isoformat(order.get("created_at")),
                 "order_status": order.get("order_status"),
             })
 
@@ -98,7 +99,7 @@ async def get_assigned_orders_for_delivery(
 
         summary = {
             "id": order.get("id"),
-            "created_at": order.get("created_at"),
+            "created_at": utc_isoformat(order.get("created_at")),
             "order_type": order.get("order_type", "product"),
             "order_status": order.get("order_status"),
             "payment_method": order.get("payment_method"),
@@ -165,7 +166,7 @@ async def get_delivered_orders_for_delivery(
 
                 delivered_summary.append({
                     "id": order.get("id"),
-                    "delivered_at": order.get("delivered_at"),
+                    "delivered_at": utc_isoformat(order.get("delivered_at")),
                     "tip_amount": tip,
                     "total_earnings": earnings
                 })
@@ -207,7 +208,7 @@ async def get_delivery_order_details(
 
     response = {
         "id": order["id"],
-        "created_at": order["created_at"],
+        "created_at": utc_isoformat(order["created_at"]),
         "order_status": order["order_status"],
         "order_type": order.get("order_type"),
         "payment_method": order.get("payment_method"),

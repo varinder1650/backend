@@ -225,3 +225,16 @@ def now_utc() -> datetime:
 def now_ist_str() -> str:
     """Get current IST as string"""
     return get_current_ist_string()
+
+
+def utc_isoformat(dt: Optional[datetime]) -> Optional[str]:
+    """
+    Serialize a datetime to ISO string with Z suffix (UTC marker).
+    Frontend can then convert to the user's local timezone via new Date().
+    """
+    if dt is None:
+        return None
+    iso = dt.isoformat()
+    if not iso.endswith("Z") and "+" not in iso:
+        iso += "Z"
+    return iso

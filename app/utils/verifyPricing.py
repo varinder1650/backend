@@ -4,40 +4,59 @@ from fastapi import HTTPException
 async def getPricing(db):
     return await db.find_one("pricing_config", {})
     
-def calculate_porter_price_backend(distance: float, dimensions: dict,weight,is_urgent) -> float:
-    """Calculate porter service price on backend"""
-    base_price = 30
-    per_km = 10
-    
-    size_multiplier = 1.0
+async def calculate_porter_price_backend(distance: float, dimensions: dict, weight, is_urgent, db) -> float:
+    """Calculate porter service price — matches frontend formula: volumetricWeight * distance * porterFee"""
+    pricing = await getPricing(db)
+    porter_rate = pricing.get("porterFee", 100) if pricing else 100
+
+    dim_map = {"<10": 10, "10-20": 20, "20-50": 50, "50+": 60}
     if dimensions:
-        size_multiplier = 1.2
-    
-    try:
-        weight_value = float(weight)
-    except (ValueError, TypeError):
-        weight_value = 1.0
+        l = dim_map.get(str(dimensions.get("length", "<10")), 10)
+        w = dim_map.get(str(dimensions.get("width", "<10")), 10)
+        h = dim_map.get(str(dimensions.get("height", "<10")), 10)
+    else:
+        l, w, h = 10, 10, 10
 
-    price = base_price + (distance * per_km * size_multiplier * weight_value)
+    volume = l * w * h
+    volumetric_weight = volume / 5000
+    price = round(volumetric_weight * distance * porter_rate)
+
     if is_urgent:
-        price = price+20
-    return round(price, 2)
+        price += 20
 
-def calculate_printout_price_backend(service_data: dict) -> float:
+    return float(price)
+
+async def calculate_printout_price_backend(service_data: dict, db) -> float:
+    """Calculate printout price — matches frontend formula using DB pricing config"""
+    pricing = await getPricing(db)
+    printout_config = pricing.get("printoutFee", {}) if pricing else {}
+
     copies = service_data['copies']
     pages = service_data['pages']
     color = service_data['color']
-    paper_size = service_data['paper_size']    
-    
-    base_price = 2 if not color else 5
-    
-    if paper_size == "A3":
-        base_price *= 2
+    paper_size = service_data['paper_size']
+    print_type = service_data.get('print_type', 'document')
+
+    if print_type == 'photo':
+        photo_config = printout_config.get("photo", {})
+        if paper_size == 'Passport':
+            price_per = photo_config.get("passport", 10)
+        else:
+            price_per = photo_config.get("other", 15)
+        return round(price_per * copies, 2)
+
+    # Document printing
+    doc_config = printout_config.get("doc", {})
+    if paper_size == "A4":
+        price_per_page = doc_config.get("A4_color" if color else "A4_black", 5 if color else 2)
+    elif paper_size == "A3":
+        price_per_page = doc_config.get("A3_color" if color else "A3_black", 10 if color else 4)
     elif paper_size == "Legal":
-        base_price *= 1.5
-    
-    total = base_price * copies * pages
-    return round(total, 2)
+        price_per_page = doc_config.get("legal_color" if color else "legal_black", 7.5 if color else 3)
+    else:
+        price_per_page = doc_config.get("A4_color" if color else "A4_black", 5 if color else 2)
+
+    return round(pages * copies * price_per_page, 2)
 
 async def calculateDeliveryFee(db, subtotal):
     pricing = await getPricing(db)
@@ -81,8 +100,9 @@ async def calculateDiscount(db, promocode, subtotal):
     else:
         discount = promo.get("discount_value", 0)
     
-    # Apply max discount
-    if promo.get("max_discount"):
-        discount = min(discount, promo["max_discount"])
+    # Apply max discount (admin saves as max_discount_amount)
+    max_discount = promo.get("max_discount") or promo.get("max_discount_amount")
+    if max_discount:
+        discount = min(discount, max_discount)
     
     return round(discount, 2)
