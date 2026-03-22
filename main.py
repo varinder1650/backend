@@ -173,7 +173,7 @@ async def health_check():
     """Comprehensive health check"""
     health_status = {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.utcnow().isoformat() + "Z",
         "version": "2.0.0",
         "services": {}
     }

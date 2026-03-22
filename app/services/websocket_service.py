@@ -58,7 +58,7 @@ class ConnectionManager:
         await self.send_personal_message({
             "type": "connection_established",
             "message": "Connected to SmartBag real-time service",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat() + "Z"
         }, websocket)
     
     def disconnect(self, websocket: WebSocket):
@@ -208,7 +208,7 @@ class RealtimeService:
                 "type": "order_update",
                 "order_id": order_id,
                 "status": update_data.get("status", order.get("order_status")),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
                 "message": update_data.get("message", "Your order has been updated"),
                 "data": update_data
             }
@@ -258,7 +258,7 @@ class RealtimeService:
                         "latitude": location_data["latitude"],
                         "longitude": location_data["longitude"],
                         "accuracy": location_data.get("accuracy"),
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": datetime.utcnow().isoformat() + "Z"
                     },
                     "estimated_arrival": location_data.get("estimated_arrival")
                 }
@@ -275,7 +275,7 @@ class RealtimeService:
             message = {
                 "type": "new_order_available",
                 "order_id": order_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
                 "message": "New delivery order available"
             }
             
@@ -297,7 +297,7 @@ class RealtimeService:
             # Add new notification
             existing.append({
                 **notification,
-                "cached_at": datetime.utcnow().isoformat()
+                "cached_at": datetime.utcnow().isoformat() + "Z"
             })
             
             # Keep only last 10 notifications
@@ -388,7 +388,7 @@ async def websocket_endpoint(
                     
                     if data.get("type") == "ping":
                         await connection_manager.send_personal_message(
-                            {"type": "pong", "timestamp": datetime.utcnow().isoformat()},
+                            {"type": "pong", "timestamp": datetime.utcnow().isoformat() + "Z"},
                             websocket
                         )
                     
@@ -405,7 +405,7 @@ async def websocket_endpoint(
             except asyncio.TimeoutError:
                 # Send ping to check connection
                 await connection_manager.send_personal_message(
-                    {"type": "ping", "timestamp": datetime.utcnow().isoformat()},
+                    {"type": "ping", "timestamp": datetime.utcnow().isoformat() + "Z"},
                     websocket
                 )
     

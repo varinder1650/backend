@@ -22,33 +22,33 @@ async def validateProductsItems(item: dict, db):
     
     return validated_item, item_total
 
-async def validatePorterItems(item: dict):
+async def validatePorterItems(item: dict, db):
     service_data = item['service_data']
     distance = service_data['estimated_distance']
-    print(service_data)
-    porter_price = calculate_porter_price_backend(
-        distance, 
+    porter_price = await calculate_porter_price_backend(
+        distance,
         service_data['dimensions'],
         service_data['weight_category'],
-        service_data['is_urgent']
+        service_data['is_urgent'],
+        db
     )
-    
+
     validated_item = {
         "type": "porter",
         "service_data": service_data,
         "price": porter_price
     }
-    
+
     return validated_item, porter_price
 
-async def validatePrintItems(item: dict):
+async def validatePrintItems(item: dict, db):
     service_data = item['service_data']
-    printout_price = calculate_printout_price_backend(service_data)
-    
+    printout_price = await calculate_printout_price_backend(service_data, db)
+
     validated_item = {
         "type": "printout",
         "service_data": service_data,
         "price": printout_price
     }
-    
+
     return validated_item, printout_price
