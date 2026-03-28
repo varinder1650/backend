@@ -173,13 +173,6 @@ class OrderResponseEnhanced(BaseModel):
     delivery_partner: Optional[str] = None
     delivery_partner_info: Optional[UserInfo] = None
 
-    # class Config:
-    #     allow_population_by_field_name = True
-    #     arbitrary_types_allowed = True
-    #     json_encoders = {
-    #         ObjectId: str
-    #     }
-
 class OrderRating(BaseModel):
     rating: int = Field(..., ge=1, le=5)
     review: str = Field(default="", max_length=500)

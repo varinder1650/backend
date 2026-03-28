@@ -6,8 +6,6 @@ import logging
 import os
 
 from pydantic import BaseModel
-from starlette.background import BackgroundTask
-
 from db.db_manager import DatabaseManager, get_database
 from app.utils.auth import current_active_user
 from app.cache.redis_manager import get_redis
@@ -413,41 +411,6 @@ async def update_cart_item(
 
 class RemoveItem(BaseModel):
     itemId: str
-
-# @router.delete("/remove")
-# async def remove_cart_item(
-#     background_tasks: BackgroundTasks,
-#     payload: RemoveItem,
-#     current_user: UserinDB = Depends(current_active_user),
-#     db: DatabaseManager = Depends(get_database)
-# ):
-#     """Remove item from cart (works for both products and services)"""
-#     try:
-#         cart = await get_cart_or_create(db, current_user.id)
-#         original_len = len(cart["items"])
-#         print(cart)
-#         print(original_len)
-#         # Remove by _id (works for both products and services)
-#         cart["items"] = [i for i in cart["items"] if i.get("_id") != payload.itemId]
-        
-#         # Also try removing by product ID (for backward compatibility)
-#         if len(cart["items"]) == original_len:
-#             cart["items"] = [i for i in cart["items"] if i.get("product") != payload.itemId]
-        
-#         if len(cart["items"]) == original_len: 
-#             raise HTTPException(status_code=404, detail="Item not found")
-        
-#         cart["updated_at"] = datetime.utcnow()
-#         await db.update_one("carts", {"user": current_user.id}, {"$set": cart})
-#         background_tasks.add_task(invalidate_cart_cache, current_user.id)
-        
-#         return {"message": "Item removed", "itemId": payload.itemId}
-        
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         logger.error(f"❌ Remove item error: {e}")
-#         raise HTTPException(status_code=500, detail="Failed to remove item")
 
 @router.delete("/remove")
 async def remove_cart_item(

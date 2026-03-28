@@ -50,8 +50,6 @@ class SupportTicketResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    # class Config:
-    #     allow_population_by_field_name = True
 
 class ProductRequestCreate(BaseModel):
     product_name: str = Field(..., min_length=2, max_length=200)
@@ -80,8 +78,6 @@ class ProductRequestResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    # class Config:
-    #     allow_population_by_field_name = True
 
 class TicketMessageCreate(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)

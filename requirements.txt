@@ -44,9 +44,6 @@ elasticsearch[async]==8.11.1
 # Fuzzy Search
 rapidfuzz==3.6.1
 
-# ML / Recommendations
-numpy
-
 # Monitoring & Logging
 structlog==23.2.0
 

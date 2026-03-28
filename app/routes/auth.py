@@ -25,11 +25,6 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# New Pydantic models
-class VerifyEmailRequest(BaseModel):
-    email: str
-    otp: str
-
 class ResendOTPRequest(BaseModel):
     email: str
 
@@ -632,30 +627,6 @@ async def refresh_token(
             detail="Token refresh failed"
         )
 
-
-# @router.post("/logout")
-# @rate_limit(max_requests=10, window_seconds=60)
-# async def logout(
-#     db: DatabaseManager = Depends(get_database),
-#     current_user=Depends(get_current_user)
-# ):
-#     """Logout user and revoke refresh tokens"""
-#     try:
-#         # Delete all refresh tokens for this user
-#         await db.delete_many('refresh_tokens', {'user_id': current_user.id})
-        
-#         logger.info(f"User {current_user.id} logged out")
-        
-#         return {
-#             "success": True,
-#             "message": "Logged out successfully"
-#         }
-#     except Exception as e:
-#         logger.error(f"Logout error: {str(e)}")
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="Logout failed"
-#         )
 
 @router.post("/logout")
 @rate_limit(max_requests=10, window_seconds=60)
