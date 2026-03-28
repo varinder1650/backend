@@ -284,6 +284,26 @@ class RealtimeService:
         except Exception as e:
             logger.error(f"Error sending new order notification: {e}")
     
+    async def send_chat_message(self, recipient_id: str, ticket_id: str, message_data: Dict):
+        """Push a chat message to a specific user via WebSocket"""
+        payload = {
+            "type": "chat_message",
+            "ticket_id": ticket_id,
+            "message": message_data
+        }
+        await self.manager.send_to_user(payload, recipient_id)
+
+    async def send_chat_to_admins(self, ticket_id: str, message_data: Dict, user_id: str, user_name: str):
+        """Push a chat message to all online admins"""
+        payload = {
+            "type": "chat_message",
+            "ticket_id": ticket_id,
+            "message": message_data,
+            "user_id": user_id,
+            "user_name": user_name,
+        }
+        await self.manager.send_to_role(payload, "admin")
+
     async def cache_notification(self, user_id: str, notification: Dict):
         """Cache notification for offline users"""
         try:

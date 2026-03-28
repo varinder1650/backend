@@ -43,13 +43,17 @@ async def lifespan(app: FastAPI):
         # Initialize database
         db = get_database()
         app.state.db = db
-        db.client.admin.command('ping')
+        await db.client.admin.command('ping')
         logger.info("✅ Database connected successfully")
-        
-        # Initialize Redis
-        await redis_manager.init_redis_pool(os.getenv('REDIS_URL', 'redis://localhost:6379'))
-        app.state.redis = redis_manager
-        logger.info("✅ Redis connected successfully")
+
+        # Initialize Redis (allow degraded startup if Redis is down)
+        try:
+            await redis_manager.init_redis_pool(os.getenv('REDIS_URL', 'redis://localhost:6379'))
+            app.state.redis = redis_manager
+            logger.info("✅ Redis connected successfully")
+        except Exception as e:
+            logger.warning(f"⚠️ Redis connection failed: {e}. App will run without caching.")
+            app.state.redis = redis_manager
         
         # Initialize Elasticsearch (optional)
         if os.getenv('ENABLE_ELASTICSEARCH', 'false').lower() == 'true':
@@ -196,8 +200,12 @@ async def health_check():
 
     # Check Redis
     try:
-        await app.state.redis.redis.ping()
-        health_status["services"]["redis"] = "healthy"
+        if app.state.redis and app.state.redis.redis:
+            await app.state.redis.redis.ping()
+            health_status["services"]["redis"] = "healthy"
+        else:
+            health_status["services"]["redis"] = "unavailable"
+            health_status["status"] = "degraded"
     except Exception as e:
         logger.error(f"Redis health check failed: {e}")
         health_status["services"]["redis"] = "unhealthy"
@@ -219,7 +227,9 @@ async def get_metrics():
     """Application metrics for monitoring"""
     try:
         # Redis metrics
-        redis_info = await app.state.redis.redis.info()
+        redis_info = {}
+        if app.state.redis and app.state.redis.redis:
+            redis_info = await app.state.redis.redis.info()
         
         # Database metrics (basic)
         db_stats = await app.state.db.db.command("dbStats")
@@ -273,9 +283,9 @@ if __name__ == "__main__":
     else:
         uvicorn.run(
             "main:app",
-            host="0.0.0.0", 
+            host="0.0.0.0",
             port=port,
             reload=False,
             log_level="warning",
-            workers=1
+            workers=int(os.getenv('WORKERS', 2))
         )

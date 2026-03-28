@@ -11,6 +11,7 @@ class SupportCategory(str, Enum):
     APP_FEEDBACK = "app_feedback"
     TECHNICAL_ISSUE = "technical_issue"
     ACCOUNT_ISSUE = "account_issue"
+    LIVE_CHAT = "live_chat"
     OTHER = "other"
 
 class SupportTicketStatus(str, Enum):
@@ -84,6 +85,9 @@ class ProductRequestResponse(BaseModel):
 
 class TicketMessageCreate(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)
+
+class ChatMessageCreate(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
 
 class TicketMessage(BaseModel):
     _id: str

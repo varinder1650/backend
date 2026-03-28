@@ -80,9 +80,9 @@ async def initiate_phonepe_payment(
             "merchantTransactionId": merchant_transaction_id,
             "merchantUserId": str(current_user.id),
             "amount": amount_in_paise,
-            "redirectUrl": payment_request.callback_url or f"https://yourapp.com/payment/callback",
+            "redirectUrl": payment_request.callback_url or payment_config.APP_CALLBACK_URL or f"https://yourapp.com/payment/callback",
             "redirectMode": "POST",
-            "callbackUrl": f"https://yourapi.com/payment/phonepe/callback",
+            "callbackUrl": payment_config.API_CALLBACK_URL or f"https://yourapi.com/payment/phonepe/callback",
             "mobileNumber": current_user.phone or order.get("delivery_address", {}).get("phone", ""),
             "paymentInstrument": {
                 "type": "PAY_PAGE"

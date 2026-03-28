@@ -222,7 +222,6 @@ async def get_delivery_order_details(
         "delivery_address": order.get("delivery_address"),
         "items": [],
     }
-    print("res: ",response)
     # Add items (minimal)
     for item in order.get("items", []):
         if item["type"] == "product":
@@ -252,7 +251,6 @@ async def get_delivery_order_details(
             response["items"].append({
                 "type": "printout",
             })
-    print("After res: ",response)
     return response
 
 @router.post("/{order_id}/accept")

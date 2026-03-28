@@ -60,12 +60,21 @@ class RateLimiter:
         More accurate and scalable than fixed window
         """
         try:
+            if not self.redis or not self.redis.redis:
+                # Redis unavailable, fall through to allow request
+                return False, {
+                    "limit": max_requests,
+                    "remaining": max_requests,
+                    "reset": int(time.time() + window_seconds),
+                    "retry_after": 0
+                }
+
             current_time = int(time.time())
             window_start = current_time - window_seconds
-            
+
             # Redis key for this client+endpoint
             key = f"rate_limit:{client_id}:{endpoint}"
-            
+
             # Use Redis sorted set for sliding window
             pipe = self.redis.redis.pipeline()
             
