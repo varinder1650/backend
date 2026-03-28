@@ -237,6 +237,20 @@ class RedisManager:
             logger.error(f"Redis INCR error for key {key}: {e}")
             return 0
     
+    async def keys(self, pattern: str) -> List[str]:
+        """Get all keys matching pattern"""
+        try:
+            if not self.redis:
+                return []
+            result = []
+            async for key in self.redis.scan_iter(match=pattern):
+                key_str = key.decode() if isinstance(key, bytes) else key
+                result.append(key_str)
+            return result
+        except Exception as e:
+            logger.error(f"Redis KEYS error for pattern {pattern}: {e}")
+            return []
+
     async def expire(self, key: str, ttl: int) -> bool:
         """Set expiration time for key"""
         try:

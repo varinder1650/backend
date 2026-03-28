@@ -5,13 +5,27 @@ import asyncio
 from typing import Dict, List
 import logging
 
-from db.db_manager import DatabaseManager
+from db.db_manager import DatabaseManager, get_database
 
 logger = logging.getLogger(__name__)
 
 class InventoryService:
     def __init__(self):
         self.redis = get_redis()
+
+    async def _get_stock_from_db(self, product_id: str) -> int:
+        """Fallback to database when Redis is unavailable"""
+        try:
+            db = get_database()
+            product = await db.find_one("products", {"id": product_id})
+            if product:
+                total_stock = product.get('stock', 0)
+                reserved_stock = product.get('reserved_stock', 0)
+                return max(0, total_stock - reserved_stock)
+            return 0
+        except Exception as e:
+            logger.error(f"Database stock check failed for {product_id}: {e}")
+            return 0
     
     async def sync_inventory_to_cache(self, db: DatabaseManager):
         """Sync all product inventory from DB to Redis"""

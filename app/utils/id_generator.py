@@ -291,7 +291,7 @@ class IDGenerator:
             if len(parts) >= 3:
                 return f"{parts[0]}-{parts[-1]}"
             return full_id
-        except:
+        except Exception:
             return full_id
 
 # Global ID generator instance

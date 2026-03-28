@@ -97,7 +97,6 @@ async def create_notification(
         }
         
         result = await db.insert_one("notifications", notification_data)
-        print("notify: ",result)
         # ✅ SEND PUSH NOTIFICATION
         # try:
         #     user = await db.find_one("users", {"id": user_id})

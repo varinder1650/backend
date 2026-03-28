@@ -72,7 +72,7 @@ async def get_metrics(
                 }
                 for req in slow_requests_raw
             ]
-        except:
+        except Exception:
             slow_requests = []
         
         return {

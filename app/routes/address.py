@@ -480,7 +480,6 @@ async def validate_pincode(
 ):
     try:
         result = await db.find_one('pincodes',{'pincode':pincode})
-        print("pin data: ",result)
         if not result or result['status'] == False:
             logger.info("pincode is not available")
             return {

@@ -26,8 +26,8 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
         self.redis = None
         try:
             self.redis = get_redis()
-        except:
-            logger.warning("⚠️ Redis not available for metrics")
+        except Exception as e:
+            logger.warning(f"⚠️ Redis not available for metrics: {e}")
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip monitoring for health checks
@@ -155,7 +155,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 body = await request.body()
                 if body and len(body) < 1000:  # Only log small bodies
                     logger.debug(f"[{request_id}] Body: {body.decode()[:500]}")
-            except:
+            except Exception:
                 pass
         
         # Execute request

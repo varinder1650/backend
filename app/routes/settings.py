@@ -36,7 +36,6 @@ async def get_public_settings(db: DatabaseManager = Depends(get_database)):
         # Remove sensitive data if any
         settings.pop("_id", None)
         # settings.pop("type", None)
-        print("settings: ",settings)
         return settings
 
     except Exception as e:
