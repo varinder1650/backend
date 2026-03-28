@@ -2,7 +2,6 @@ from typing import Dict
 from bson import ObjectId
 from fastapi import APIRouter, Depends
 from app.utils.mongo import fix_mongo_types
-# from admin.utils.serialize import serialize_document
 from app.utils.auth import current_active_user
 from schema.user import UserinDB
 from db.db_manager import DatabaseManager, get_database

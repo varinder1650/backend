@@ -69,31 +69,6 @@ class AuthService:
                 detail=f"Failed to create user: {str(e)}"
             )
 
-    # async def authenticate_user(self, db, username, password):
-    #     """Authenticate user with email and password"""
-    #     try:
-    #         logger.info(f"Authenticating user: {username}")
-    #         auth = await get_user(db, username)
-            
-    #         if not auth:
-    #             logger.warning(f"User {username} not found")
-    #             return None
-                
-    #         if not verify_password(password, auth['hashed_password']):
-    #             logger.warning(f"Invalid password for user {username}")
-    #             return None
-            
-    #         if not auth.get('is_active', True):
-    #             logger.warning("User is inactive")
-    #             return None
-
-    #         logger.info(f"User {username} authenticated successfully")
-    #         return auth
-            
-    #     except Exception as e:
-    #         logger.error(f"Authentication error: {str(e)}")
-    #         return None
-
     async def authenticate_user(self, db, username, password):
         """Authenticate with async password verification"""
         try:
