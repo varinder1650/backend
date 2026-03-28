@@ -8,7 +8,7 @@ from db.db_manager import DatabaseManager, get_database
 from schema.support import (
     SupportTicketCreate, SupportTicketResponse, SupportTicketStatus,
     ProductRequestCreate, ProductRequestResponse, ProductRequestStatus,
-    TicketMessageCreate
+    TicketMessageCreate, ChatMessageCreate, SupportCategory
 )
 from app.utils.mongo import fix_mongo_types
 
@@ -310,6 +310,289 @@ async def update_ticket_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update ticket status"
         )
+
+# ==========================================
+# LIVE CHAT ENDPOINTS
+# ==========================================
+
+@router.post("/chat/start")
+async def start_chat(
+    current_user=Depends(get_current_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """Start a new live chat or resume an existing open one"""
+    try:
+        # Check for existing open live_chat ticket
+        existing_chat = await db.find_one(
+            "support_tickets",
+            {
+                "user_id": current_user.id,
+                "category": "live_chat",
+                "status": {"$in": ["open", "in_progress"]}
+            }
+        )
+
+        if existing_chat:
+            fixed = fix_mongo_types(existing_chat)
+            formatted_messages = []
+            for msg in existing_chat.get("messages", []):
+                formatted_messages.append({
+                    "_id": str(msg.get("_id", ObjectId())),
+                    "message": msg["message"],
+                    "sender_type": msg["sender_type"],
+                    "sender_name": msg["sender_name"],
+                    "sender_id": str(msg.get("sender_id", "")),
+                    "created_at": msg["created_at"].isoformat() if isinstance(msg["created_at"], datetime) else msg["created_at"],
+                })
+            return {
+                "ticket_id": fixed["_id"],
+                "status": existing_chat["status"],
+                "created_at": existing_chat["created_at"],
+                "messages": formatted_messages,
+                "is_new": False
+            }
+
+        # Create new live chat ticket
+        ticket_doc = {
+            "user_id": current_user.id,
+            "user_name": current_user.name,
+            "user_email": current_user.email,
+            "category": "live_chat",
+            "subject": "Live Chat",
+            "message": "Chat started",
+            "status": "open",
+            "priority": "medium",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            "messages": [],
+            "assigned_to": None,
+            "admin_response": None,
+        }
+
+        ticket_id = await db.insert_one("support_tickets", ticket_doc)
+
+        logger.info(f"Live chat started for user {current_user.email}, ticket {ticket_id}")
+
+        return {
+            "ticket_id": str(ticket_id),
+            "status": "open",
+            "created_at": ticket_doc["created_at"],
+            "messages": [],
+            "is_new": True
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Start chat error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start chat"
+        )
+
+
+@router.get("/chat/active")
+async def get_active_chat(
+    current_user=Depends(get_current_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """Get user's active live chat with message history"""
+    try:
+        chat = await db.find_one(
+            "support_tickets",
+            {
+                "user_id": current_user.id,
+                "category": "live_chat",
+                "status": {"$in": ["open", "in_progress"]}
+            }
+        )
+
+        if not chat:
+            return {"active_chat": None}
+
+        fixed = fix_mongo_types(chat)
+        formatted_messages = []
+        for msg in chat.get("messages", []):
+            formatted_messages.append({
+                "_id": str(msg.get("_id", ObjectId())),
+                "message": msg["message"],
+                "sender_type": msg["sender_type"],
+                "sender_name": msg["sender_name"],
+                "sender_id": str(msg.get("sender_id", "")),
+                "created_at": msg["created_at"].isoformat() if isinstance(msg["created_at"], datetime) else msg["created_at"],
+            })
+
+        return {
+            "active_chat": {
+                "ticket_id": fixed["_id"],
+                "status": chat["status"],
+                "created_at": chat["created_at"],
+                "messages": formatted_messages,
+                "assigned_to": chat.get("assigned_to"),
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Get active chat error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get active chat"
+        )
+
+
+@router.post("/chat/{ticket_id}/send")
+async def send_chat_message(
+    ticket_id: str,
+    message_data: ChatMessageCreate,
+    current_user=Depends(get_current_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """Send a message in a live chat (REST fallback for WebSocket)"""
+    try:
+        if not ObjectId.is_valid(ticket_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid ticket ID"
+            )
+
+        ticket = await db.find_one("support_tickets", {"_id": ObjectId(ticket_id)})
+
+        if not ticket:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat not found"
+            )
+
+        if str(ticket["user_id"]) != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+
+        if ticket["status"] == "closed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This chat has been closed"
+            )
+
+        # Create message
+        new_message = {
+            "_id": ObjectId(),
+            "message": message_data.message.strip(),
+            "sender_type": "user",
+            "sender_name": current_user.name,
+            "sender_id": current_user.id,
+            "created_at": datetime.utcnow(),
+        }
+
+        # Save to DB
+        await db.update_one(
+            "support_tickets",
+            {"_id": ObjectId(ticket_id)},
+            {
+                "$push": {"messages": new_message},
+                "$set": {
+                    "updated_at": datetime.utcnow(),
+                    "status": "open" if ticket["status"] == "resolved" else ticket["status"]
+                }
+            }
+        )
+
+        # Push to admins via WebSocket
+        try:
+            from app.services.websocket_service import connection_manager
+            message_payload = {
+                "type": "chat_message",
+                "ticket_id": ticket_id,
+                "message": {
+                    "_id": str(new_message["_id"]),
+                    "message": new_message["message"],
+                    "sender_type": "user",
+                    "sender_name": current_user.name,
+                    "sender_id": current_user.id,
+                    "created_at": new_message["created_at"].isoformat(),
+                },
+                "user_id": current_user.id,
+                "user_name": current_user.name,
+            }
+            await connection_manager.send_to_role(message_payload, "admin")
+        except Exception as ws_err:
+            logger.warning(f"WebSocket push to admin failed: {ws_err}")
+
+        logger.info(f"Chat message sent in ticket {ticket_id} by user {current_user.id}")
+
+        return {
+            "success": True,
+            "message": {
+                "_id": str(new_message["_id"]),
+                "message": new_message["message"],
+                "sender_type": "user",
+                "sender_name": current_user.name,
+                "created_at": new_message["created_at"],
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Send chat message error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send message"
+        )
+
+
+@router.post("/chat/{ticket_id}/close")
+async def close_chat(
+    ticket_id: str,
+    current_user=Depends(get_current_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """Close an active live chat"""
+    try:
+        if not ObjectId.is_valid(ticket_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid ticket ID"
+            )
+
+        ticket = await db.find_one("support_tickets", {"_id": ObjectId(ticket_id)})
+
+        if not ticket:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+
+        if str(ticket["user_id"]) != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+        await db.update_one(
+            "support_tickets",
+            {"_id": ObjectId(ticket_id)},
+            {"$set": {"status": "closed", "updated_at": datetime.utcnow()}}
+        )
+
+        # Notify admins
+        try:
+            from app.services.websocket_service import connection_manager
+            await connection_manager.send_to_role({
+                "type": "chat_closed",
+                "ticket_id": ticket_id,
+                "user_id": current_user.id,
+                "user_name": current_user.name,
+            }, "admin")
+        except Exception:
+            pass
+
+        return {"success": True, "message": "Chat closed"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Close chat error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to close chat"
+        )
+
 
 # Keep your existing product request endpoints
 @router.post("/product-requests", response_model=ProductRequestResponse)
