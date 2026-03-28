@@ -8,11 +8,59 @@ import logging
 from datetime import datetime
 from bson import ObjectId
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from pydantic import BaseModel
+from typing import Optional
 from app.services.websocket_service import connection_manager, realtime_service
 from db.db_manager import get_database
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class ChatPushRequest(BaseModel):
+    ticket_id: str
+    user_id: str
+    message: str
+    sender_name: str = "Support Team"
+
+
+@router.post("/support/chat/push")
+async def push_chat_to_user(req: ChatPushRequest):
+    """
+    Internal endpoint called by admin-backend to push a chat message
+    to the user's WebSocket connection in real-time.
+    """
+    try:
+        payload = {
+            "type": "chat_message",
+            "ticket_id": req.ticket_id,
+            "message": {
+                "message": req.message,
+                "sender_type": "admin",
+                "sender_name": req.sender_name,
+                "created_at": datetime.utcnow().isoformat(),
+            }
+        }
+        await connection_manager.send_to_user(payload, req.user_id)
+
+        # Also create notification if user is offline
+        if not connection_manager.get_user_connections_count(req.user_id):
+            try:
+                from app.routes.notifications import create_notification
+                db = get_database()
+                await create_notification(
+                    db, req.user_id,
+                    "New message from support",
+                    req.message[:100],
+                    "support_chat"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to create offline notification: {e}")
+
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Chat push error: {e}")
+        return {"success": False, "error": str(e)}
 
 
 @router.websocket("/support/chat/ws")

@@ -79,18 +79,10 @@ async def create_address(
                 detail="Mobile number must be exactly 10 digits"
             )
         
-        # Check address limit
+        # Check if this is the first address for the user
         user_addresses_count = await db.count_documents("user_addresses", {
             "user_id": current_user.id
         })
-        
-        if user_addresses_count >= MAX_ADDRESSES_PER_USER:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Maximum {MAX_ADDRESSES_PER_USER} addresses allowed. Please delete an existing address first."
-            )
-        
-        # Check if this is the first address for the user
         is_default = user_addresses_count == 0  # First address becomes default
         
         address_doc = address_data.dict()
