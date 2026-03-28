@@ -47,8 +47,8 @@ class SupportTicketResponse(BaseModel):
     order_id: Optional[str] = None
     status: SupportTicketStatus = SupportTicketStatus.OPEN
     admin_response: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     # class Config:
     #     allow_population_by_field_name = True
@@ -77,8 +77,8 @@ class ProductRequestResponse(BaseModel):
     status: ProductRequestStatus = ProductRequestStatus.PENDING
     admin_notes: Optional[str] = None
     # votes: int = 0  # Other users can upvote requests
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     # class Config:
     #     allow_population_by_field_name = True
@@ -95,7 +95,7 @@ class TicketMessage(BaseModel):
     sender_type: str  # 'user' or 'admin'
     sender_name: str
     sender_id: str
-    created_at: datetime
+    created_at: Optional[datetime] = None
     attachments: Optional[List[str]] = []
 
 class TicketDetailResponse(BaseModel):
@@ -105,8 +105,8 @@ class TicketDetailResponse(BaseModel):
     message: str
     status: str
     priority: str = "medium"
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     user_id: str
     user_name: str
     user_email: str
