@@ -1,4 +1,4 @@
-import random
+import secrets
 import string
 from datetime import datetime, timedelta
 from typing import Optional
@@ -12,7 +12,7 @@ class OTPService:
     
     def generate_otp(self, length: int = 6) -> str:
         """Generate a random OTP"""
-        return ''.join(random.choices(string.digits, k=length))
+        return ''.join(secrets.choice(string.digits) for _ in range(length))
     
     async def create_otp(
         self, 
@@ -61,15 +61,13 @@ class OTPService:
     ) -> bool:
         """Verify OTP"""
         try:
-            print(email,otp,otp_type)
             otp_doc = await self.db.find_one("otps", {
                 "email": email.lower().strip(),
                 "otp": otp,
                 "type": otp_type,
-                # "used": False,
-                # "expires_at": {"$gt": datetime.utcnow()}
+                "used": False,
+                "expires_at": {"$gt": datetime.utcnow()}
             })
-            print(otp_doc)
             if not otp_doc:
                 # Check if OTP exists but wrong/expired
                 existing_otp = await self.db.find_one("otps", {

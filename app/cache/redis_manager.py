@@ -17,43 +17,7 @@ class RedisManager:
         # L1 Cache (In-Memory)
         self.memory_cache = {}
         self.memory_cache_ttl = {}
-        self.max_memory_items = 100
-    
-    # async def init_redis_pool(self, redis_url: str = "redis://localhost:6379"):
-    #     """Initialize Redis connection pool with optimizations"""
-    #     try:
-    #         from redis.asyncio import ConnectionPool
-    #         import socket
-            
-    #         # Create connection pool with keepalive
-    #         self._pool = ConnectionPool.from_url(
-    #             redis_url,
-    #             max_connections=int(os.getenv('REDIS_MAX_CONNECTIONS', 50)),
-    #             socket_keepalive=True,
-    #             socket_keepalive_options={
-    #                 socket.TCP_KEEPIDLE: 60,
-    #                 socket.TCP_KEEPINTVL: 10,
-    #                 socket.TCP_KEEPCNT: 3
-    #             },
-    #             socket_timeout=int(os.getenv('REDIS_SOCKET_TIMEOUT', 5)),
-    #             socket_connect_timeout=int(os.getenv('REDIS_SOCKET_CONNECT_TIMEOUT', 5)),
-    #             decode_responses=False,
-    #             retry_on_timeout=True,
-    #             health_check_interval=30
-    #         )
-            
-    #         self.redis = redis.Redis(connection_pool=self._pool)
-            
-    #         # Test connection
-    #         await self.redis.ping()
-            
-    #         logger.info("✅ Redis connection pool initialized successfully")
-    #         logger.info(f"   - Max connections: {os.getenv('REDIS_MAX_CONNECTIONS', 50)}")
-    #         logger.info(f"   - Health check enabled")
-            
-    #     except Exception as e:
-    #         logger.error(f"❌ Redis initialization failed: {e}")
-    #         raise
+        self.max_memory_items = int(os.getenv('L1_CACHE_MAX_ITEMS', 1000))
     
     async def init_redis_pool(self, redis_url: str = "redis://localhost:6379"):
         """Initialize Redis connection pool"""

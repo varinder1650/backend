@@ -2,7 +2,9 @@ import os
 import hmac
 import hashlib
 
-ORDER_SIGNATURE_SECRET = os.getenv("ORDER_SIGNATURE_SECRET", "smartbag123")
+ORDER_SIGNATURE_SECRET = os.getenv("ORDER_SIGNATURE_SECRET")
+if not ORDER_SIGNATURE_SECRET:
+    raise RuntimeError("ORDER_SIGNATURE_SECRET environment variable is required")
 
 def generate_order_signature(draft_order_id: str, total_amount: float, user_id: str) -> str:
     """Generate HMAC signature for order verification"""

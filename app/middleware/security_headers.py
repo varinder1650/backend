@@ -32,8 +32,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Content Security Policy
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com",
-            "style-src 'self' 'unsafe-inline'",
+            "script-src 'self' https://cdnjs.cloudflare.com",
+            "style-src 'self'",
             "img-src 'self' data: https:",
             "font-src 'self' data:",
             "connect-src 'self'",

@@ -12,7 +12,10 @@ from dotenv import load_dotenv
 from datetime import datetime
 import logging
 
-load_dotenv()
+# Load environment-specific config: APP_ENV=development (default) or APP_ENV=production
+_app_env = os.getenv("APP_ENV", "development")
+load_dotenv(f".env.{_app_env}", override=True)   # env-specific file takes priority
+load_dotenv(".env", override=False)               # fallback for any missing vars
 
 # Configure structured logging
 structlog.configure(
@@ -69,7 +72,8 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Database indexes verified")
         
         logger.info("🎉 SmartBag application started successfully")
-        logger.info(f"📍 Environment: {os.getenv('ENVIRONMENT', 'Development')}")
+        logger.info(f"📍 Environment: {os.getenv('ENVIRONMENT', 'Development')} (APP_ENV={_app_env})")
+        logger.info(f"📍 Database: {os.getenv('DB_NAME', 'unknown')}")
 
     except Exception as e:
         logger.error(f"💥 Failed to initialize application: {str(e)}")
@@ -138,6 +142,9 @@ async def create_indexes(db):
         await safe_create_index('support_tickets', [("user_id", 1), ("created_at", -1)])
         await safe_create_index('support_tickets', [("status", 1), ("created_at", -1)])
         
+        # OTP TTL index (auto-delete expired OTPs)
+        await safe_create_index('otps', "expires_at", expireAfterSeconds=0)
+
         # Session and token indexes
         await safe_create_index('refresh_tokens', "expire", expireAfterSeconds=0)
         await safe_create_index('password_reset_tokens', "expires_at", expireAfterSeconds=0)
@@ -183,24 +190,27 @@ async def health_check():
         await app.state.db.client.admin.command('ping')
         health_status["services"]["database"] = "healthy"
     except Exception as e:
-        health_status["services"]["database"] = f"unhealthy: {str(e)}"
+        logger.error(f"Database health check failed: {e}")
+        health_status["services"]["database"] = "unhealthy"
         health_status["status"] = "degraded"
-    
+
     # Check Redis
     try:
         await app.state.redis.redis.ping()
         health_status["services"]["redis"] = "healthy"
     except Exception as e:
-        health_status["services"]["redis"] = f"unhealthy: {str(e)}"
+        logger.error(f"Redis health check failed: {e}")
+        health_status["services"]["redis"] = "unhealthy"
         health_status["status"] = "degraded"
-    
+
     # Check Elasticsearch (optional)
     if hasattr(app.state, 'search'):
         try:
             await app.state.search.client.ping()
             health_status["services"]["elasticsearch"] = "healthy"
         except Exception as e:
-            health_status["services"]["elasticsearch"] = f"unhealthy: {str(e)}"
+            logger.error(f"Elasticsearch health check failed: {e}")
+            health_status["services"]["elasticsearch"] = "unhealthy"
     
     return health_status
 
@@ -233,7 +243,8 @@ async def get_metrics():
             }
         }
     except Exception as e:
-        return {"error": str(e)}
+        logger.error(f"Metrics endpoint error: {e}")
+        return {"error": "Failed to retrieve metrics"}
 
 ENV = os.getenv('ENVIRONMENT', 'Development')
 

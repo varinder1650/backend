@@ -9,9 +9,9 @@ from app.services.order_service import OrderService
 from app.services.email_service import email_service
 from app.routes.notifications import create_notification
 from app.utils.auth import current_active_user, get_current_user
-from app.utils.orderItemGeneration import validatePorterItems, validateProductsItems, validatePrintItems
-from app.utils.orderVerification import generate_order_signature, verify_order_signature
-from app.utils.verifyPricing import calculateDeliveryFee, calculateDiscount
+from app.utils.order_item_generation import validatePorterItems, validateProductsItems, validatePrintItems
+from app.utils.order_verification import generate_order_signature, verify_order_signature
+from app.utils.verify_pricing import calculateDeliveryFee, calculateDiscount
 from db.db_manager import DatabaseManager, get_database
 from schema.order import ConfirmOrderRequest, DeliveryAddress, DraftOrderRequest, DraftOrderResponse, OrderCreate, OrderResponse, OrderResponseEnhanced, OrderRating
 from schema.user import UserinDB
@@ -117,8 +117,8 @@ async def create_draft_order(
                 600,  # 10 minutes TTL
                 json.dumps(draft_order, default=str)
             )
-        except:
-            # Fallback: store in DB
+        except Exception as redis_err:
+            logger.warning(f"Redis draft store failed, falling back to DB: {redis_err}")
             await db.insert_one("draft_orders", draft_order)
         
         logger.info(f"Draft order created: {draft_order}, total: {total_amount}")
@@ -159,23 +159,25 @@ async def confirm_order(
                 draft_order = json.loads(draft_json)
             else:
                 draft_order = await db.find_one("draft_orders", {"draft_order_id": draft_order_id})
-        except:
+        except Exception as redis_err:
+            logger.warning(f"Redis draft fetch failed, falling back to DB: {redis_err}")
             draft_order = await db.find_one("draft_orders", {"draft_order_id": draft_order_id})
-        
-        print("fetched order: ",draft_order)
         
         if not draft_order:
             raise HTTPException(404, "Draft order not found or expired")
         
-        # Verify signature
+        # Verify signature against the original draft total
         expected_signature = generate_order_signature(
             draft_order_id,
             draft_order["total_amount"],
             current_user.id
         )
-        
+
         if confirm_data.signature != expected_signature:
             raise HTTPException(400, "Invalid order signature")
+
+        # Store original signature-verified total (may be recalculated below if prices changed)
+        original_total = draft_order["total_amount"]
         
         # Verify user
         if draft_order["user_id"] != current_user.id:
@@ -185,49 +187,91 @@ async def confirm_order(
         order_id = await id_generator.generate_order_id(current_user.id)
         
         transformed_items = []
-        
+
+        # --- Batch-fetch all products at once (fixes N+1 query) ---
+        product_items = [i for i in draft_order["items"] if i["type"] == "product"]
+        product_ids = [i["product_id"] for i in product_items]
+        product_map = {}
+        if product_ids:
+            products = await db.find_many("products", {"id": {"$in": product_ids}})
+            product_map = {p["id"]: p for p in products}
+
+        # --- Re-validate prices against current DB prices ---
+        price_changed = False
+        for item in product_items:
+            product = product_map.get(item["product_id"])
+            if not product:
+                raise HTTPException(400, f"Product {item['product_id']} not found")
+            current_price = product.get("selling_price", 0)
+            if current_price != item["price"]:
+                logger.warning(
+                    f"Price changed for {product['name']}: "
+                    f"draft={item['price']}, current={current_price}"
+                )
+                price_changed = True
+                item["price"] = current_price
+
+        # If prices changed, recalculate total and re-sign
+        if price_changed:
+            new_subtotal = sum(i["price"] * i["quantity"] for i in product_items)
+            # Recalculate non-product subtotals (printout items)
+            for item in draft_order["items"]:
+                if item["type"] == "printout":
+                    new_subtotal += item["price"]
+            porter_total = sum(
+                i["price"] for i in draft_order["items"] if i["type"] == "porter"
+            )
+            new_total = (
+                new_subtotal + porter_total
+                + draft_order["delivery_fee"]
+                + draft_order["app_fee"]
+                + draft_order["tip_amount"]
+                - draft_order["discount"]
+            )
+            new_total = round(new_total, 2)
+            logger.warning(
+                f"Order total recalculated: {draft_order['total_amount']} -> {new_total}"
+            )
+            draft_order["subtotal"] = new_subtotal
+            draft_order["total_amount"] = new_total
+            # Re-generate signature with new total
+            draft_order["signature"] = generate_order_signature(
+                draft_order_id, new_total, current_user.id
+            )
+
         for item in draft_order["items"]:
             if item["type"] == "product":
-                # Get full product details
-                product = await db.find_one("products", {"id": item["product_id"]})
-                if not product:
-                    raise HTTPException(400, f"Product {item['product_id']} not found")
-                
+                product = product_map.get(item["product_id"])
                 transformed_items.append({
                     "type": "product",
                     "product": product["id"],
                     "quantity": item["quantity"],
                     "price": item["price"]
                 })
-            
+
             elif item["type"] == "printout":
-                file_urls = []
-                if item["service_data"].get("document_urls"):
-                    file_urls = item["service_data"].get("document_urls")
-                else:
-                    file_urls = item["service_data"].get("photo_urls")
+                file_urls = (
+                    item["service_data"].get("document_urls")
+                    or item["service_data"].get("photo_urls")
+                    or []
+                )
                 transformed_items.append({
                     "type": "printout",
                     "service_data": {
                         **item["service_data"],
-                        
                         "file_urls": file_urls,
                         "price": item["price"]
                     }
                 })
-            
+
             elif item["type"] == "porter":
                 service_data = item["service_data"]
-                
                 weight_map = {
-                    "0.5-1": 1,
-                    "1-5": 2,
-                    "5-10": 3,
-                    "10-20": 4,
-                    "20+": 5
+                    "0.5-1": 1, "1-5": 2, "5-10": 3, "10-20": 4, "20+": 5
                 }
-                weight_category_int = weight_map.get(service_data.get("weight_category", "1-5"), 2)
-                
+                weight_category_int = weight_map.get(
+                    service_data.get("weight_category", "1-5"), 2
+                )
                 transformed_items.append({
                     "type": "porter",
                     "service_data": {
@@ -239,7 +283,7 @@ async def confirm_order(
                         "estimated_distance": service_data.get("estimated_distance", 0),
                         "estimated_cost": item["price"],
                         "notes": service_data.get("notes", ""),
-                        "is_urgent": service_data.get("is_urgent",False)
+                        "is_urgent": service_data.get("is_urgent", False)
                     }
                 })
         
@@ -264,8 +308,8 @@ async def confirm_order(
         try:
             redis = get_redis()
             await redis.delete(f"draft_order:{draft_order_id}")
-        except:
-            pass
+        except Exception:
+            logger.debug(f"Could not delete draft from Redis: {draft_order_id}")
         
         await db.delete_one("draft_orders", {"draft_order_id": draft_order_id})
         
@@ -304,19 +348,24 @@ async def confirm_order(
                 current_user.email,
                 current_user.name
             )
-        except:
-            logger.warning("email generation failed!!")
+        except Exception as email_err:
+            logger.warning(f"Email generation failed: {email_err}")
+
         return {
             "success": True,
             "order_id": order_id,
-            "message": "Order placed successfully"
+            "message": "Order placed successfully",
+            "price_updated": price_changed,
+            "total_amount": draft_order["total_amount"],
         }
-        
+
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     except Exception as e:
         logger.error(f"Order confirmation error: {e}", exc_info=True)
-        raise HTTPException(500, f"Failed to confirm order: {str(e)}")
+        raise HTTPException(500, "Failed to confirm order")
 
 @router.post("/")
 async def create_order(
@@ -371,22 +420,14 @@ async def create_order(
         # Add background tasks for order processing
         try:
             background_tasks.add_task(
-                send_order_confirmation_email, 
-                created_order, 
+                send_order_confirmation_email,
+                created_order,
                 current_user.email,
                 current_user.name
             )
-        except:
-            logger.warning("email generation failed!!")
-        
-        # Format response
-        # created_order['id'] = str(created_order["id"])
-        # created_order["user"] = str(created_order['user'])
-        # for item in created_order.get("items", []):
-        #     if isinstance(item.get("product"), ObjectId):
-        #         item["product"] = str(item["product"])
+        except Exception as email_err:
+            logger.warning(f"Email generation failed: {email_err}")
 
-        # return OrderResponse(**created_order)
         return True
         
     except ValueError as e:
