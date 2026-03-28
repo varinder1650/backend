@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import httpx
 from db.db_manager import DatabaseManager, get_database
 from app.utils.auth import current_active_user
@@ -16,16 +16,17 @@ from bson import ObjectId
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/payment", tags=["payment"])
 
-# PhonePe Configuration
-PHONEPE_MERCHANT_ID = "YOUR_MERCHANT_ID"  # Replace with your PhonePe merchant ID
-PHONEPE_SALT_KEY = "YOUR_SALT_KEY"  # Replace with your PhonePe salt key
-PHONEPE_SALT_INDEX = "1"  # Usually 1 for production
-PHONEPE_API_URL = "https://api.phonepe.com/apis/hermes"  # Production URL
-# For testing use: "https://api-preprod.phonepe.com/apis/pg-sandbox"
+# PhonePe Configuration - read from environment via payment_config
+from app.config.payment_config import payment_config
+
+PHONEPE_MERCHANT_ID = payment_config.PHONEPE_MERCHANT_ID
+PHONEPE_SALT_KEY = payment_config.PHONEPE_SALT_KEY
+PHONEPE_SALT_INDEX = payment_config.PHONEPE_SALT_INDEX
+PHONEPE_API_URL = payment_config.PHONEPE_API_URL
 
 class PaymentInitiateRequest(BaseModel):
     order_id: str
-    amount: float
+    amount: float = Field(..., gt=0, le=1000000, description="Amount in INR, must be positive")
     callback_url: Optional[str] = None
 
 class PaymentStatusRequest(BaseModel):

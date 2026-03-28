@@ -323,8 +323,8 @@ class GlobalRateLimitMiddleware:
     
     async def __call__(self, scope, receive, send):
         """ASGI3 middleware interface"""
-        # Bypass in testing
-        if os.getenv('ENVIRONMENT') == 'Development':
+        # Only bypass in Testing environment, not Development/Staging
+        if os.getenv('ENVIRONMENT') == 'Testing':
             await self.app(scope, receive, send)
             return
         

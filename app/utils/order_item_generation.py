@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 
-from app.utils.verifyPricing import calculate_porter_price_backend, calculate_printout_price_backend
+from app.utils.verify_pricing import calculate_porter_price_backend, calculate_printout_price_backend
 
 async def validateProductsItems(item: dict, db):
     product = await db.find_one("products", {"id": item['product_id']})

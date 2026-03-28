@@ -29,9 +29,11 @@ def setup_middleware(app: FastAPI):
     allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
     allowed_origins = [origin.strip() for origin in allowed_origins]
     
+    # Note: allow_origins=["*"] with allow_credentials=True violates the CORS spec
+    # and will be rejected by browsers. Always use explicit origins.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=allowed_origins if os.getenv('ENVIRONMENT') == 'Production' else ["*"],
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allow_headers=["*"],
