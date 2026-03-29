@@ -7,6 +7,7 @@ from db.db_manager import get_database
 from app.cache.redis_manager import redis_manager
 from app.services.search_service import search_service
 from app.services.inventory_service import inventory_service
+from app.routes.monitor import router as monitor_router
 import os
 from dotenv import load_dotenv
 from datetime import datetime
@@ -169,6 +170,9 @@ app = FastAPI(
     docs_url="/docs" if os.getenv('ENVIRONMENT') == 'Development' else None,
     redoc_url="/redoc" if os.getenv('ENVIRONMENT') == 'Development' else None
 )
+
+# Monitor dashboard (served at /monitor)
+app.include_router(monitor_router)
 
 # Create sub-applications
 customer_app = create_customer_app()

@@ -30,21 +30,38 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
             logger.warning(f"⚠️ Redis not available for metrics: {e}")
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Skip monitoring for health checks
-        if request.url.path in ["/health", "/metrics"]:
+        # Skip monitoring for health/monitor endpoints
+        if request.url.path in ["/health", "/metrics", "/monitor", "/monitor/api"]:
             return await call_next(request)
-        
+
+        # Track active requests
+        if self.redis:
+            try:
+                await self.redis.increment("metrics:active_requests")
+            except Exception:
+                pass
+
         start_time = time.time()
-        
+
         # Execute request
         response = await call_next(request)
-        
+
         # Calculate duration
         duration = time.time() - start_time
-        
+
+        # Decrement active requests
+        if self.redis:
+            try:
+                await self.redis.increment("metrics:active_requests", -1)
+                await self.redis.increment("metrics:total_requests")
+                if response.status_code >= 500:
+                    await self.redis.increment("metrics:errors:total")
+            except Exception:
+                pass
+
         # Add performance header
         response.headers["X-Process-Time"] = f"{duration:.3f}"
-        
+
         # Log slow requests
         if duration > self.slow_threshold:
             logger.warning(
