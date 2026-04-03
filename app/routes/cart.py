@@ -102,15 +102,10 @@ async def add_to_cart(
             if not req.serviceName or req.servicePrice is None:
                 raise HTTPException(status_code=400, detail="Service name and price required")
             
-            # Check if porter service already exists (only 1 allowed)
+            # If porter service already exists, remove the old one (supports edit flow)
             if req.serviceType == 'porter':
-                has_porter = any(i.get("serviceType") == "porter" for i in cart["items"])
-                if has_porter:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail="Only one porter service allowed per cart. Remove existing one first."
-                    )
-            
+                cart["items"] = [i for i in cart["items"] if i.get("serviceType") != "porter"]
+
             # Add service to cart
             service_item = {
                 "_id": str(uuid.uuid4()),
