@@ -288,23 +288,41 @@ async def get_cart(
         inventory_service = get_inventory_service()
 
         for item in cart["items"]:
+            # Handle services FIRST (before products, since services may also have an 'id' field)
+            if item.get("serviceType") in ["porter", "printout"]:
+                service_total = item.get("servicePrice", 0)
+                total_price += service_total
+                total_items += 1
+                
+                items_with_product.append({
+                    "_id": str(item.get("_id", "")),
+                    "serviceType": item["serviceType"],
+                    "serviceName": item.get("serviceName"),
+                    "servicePrice": item.get("servicePrice"),
+                    "serviceDetails": item.get("serviceDetails"),
+                    "quantity": 1,
+                    "item_total": service_total,
+                    "added_at": item.get("added_at"),
+                    "updated_at": item.get("updated_at")
+                })
+
             # Handle products
-            if item.get("serviceType") == "product" or item.get("id"):
+            elif item.get("id"):
                 product = product_map.get(item.get("id"))
-                if not product: 
+                if not product:
                     continue
-                    
+
                 try:
                     stock = await inventory_service.get_available_stock(product["id"])
                 except Exception:
                     stock = product.get("stock", 0)
-                    
+
                 item_total = product.get("price", 0) * item["quantity"]
                 total_price += item_total
                 total_items += item["quantity"]
-                
+
                 items_with_product.append({
-                    "_id": str(item.get("_id", "")),  # Convert ObjectId to string
+                    "_id": str(item.get("_id", "")),
                     "productId": product["id"],
                     "product": {**product, "images": process_product_images(product)},
                     "serviceType": "product",
@@ -312,24 +330,6 @@ async def get_cart(
                     "available_stock": stock,
                     "stock_sufficient": stock >= item["quantity"],
                     "item_total": item_total,
-                    "added_at": item.get("added_at"),
-                    "updated_at": item.get("updated_at")
-                })
-            
-            # Handle services
-            elif item.get("serviceType") in ["porter", "printout"]:
-                service_total = item.get("servicePrice", 0)
-                total_price += service_total
-                total_items += 1
-                
-                items_with_product.append({
-                    "_id": str(item.get("_id", "")),  # Convert ObjectId to string
-                    "serviceType": item["serviceType"],
-                    "serviceName": item.get("serviceName"),
-                    "servicePrice": item.get("servicePrice"),
-                    "serviceDetails": item.get("serviceDetails"),
-                    "quantity": 1,
-                    "item_total": service_total,
                     "added_at": item.get("added_at"),
                     "updated_at": item.get("updated_at")
                 })
