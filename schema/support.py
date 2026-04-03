@@ -55,7 +55,7 @@ class ProductRequestCreate(BaseModel):
     product_name: str = Field(..., min_length=2, max_length=200)
     brand: Optional[str] = Field(None, max_length=100)
     category: Optional[str] = Field(None, max_length=100)
-    description: str = Field(..., min_length=10, max_length=1000)
+    description: str = Field(..., max_length=1000)
     # estimated_price: Optional[float] = Field(None, gt=0)
     # why_needed: str = Field(..., min_length=10, max_length=500)
 
