@@ -35,7 +35,7 @@ async def estimate_distance(req: DistanceRequest):
         )
 
         async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(url)
+            response = await client.post(url)
 
         if response.status_code != 200:
             logger.error(f"Ola Maps Directions API error: {response.status_code} {response.text}")
