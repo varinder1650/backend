@@ -60,6 +60,7 @@ class PorterServiceData(BaseModel):
     notes: Optional[str] = ""
     is_urgent: bool
     phone: Optional[str] = None
+    recipient_name: Optional[str] = None
 
     class Config:
         extra = "ignore"
