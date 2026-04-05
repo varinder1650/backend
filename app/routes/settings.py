@@ -2,11 +2,65 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
 import logging
+import os
+import httpx
 from db.db_manager import DatabaseManager, get_database
 from app.utils.verify_pricing import getPricing
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+OLA_API_KEY = os.getenv('OLA_KRUTRIM_API_KEY')
+
+
+class DistanceRequest(BaseModel):
+    origin_lat: float
+    origin_lng: float
+    dest_lat: float
+    dest_lng: float
+
+
+@router.post("/estimate-distance")
+async def estimate_distance(req: DistanceRequest):
+    """Calculate driving distance between two coordinates using Ola Maps Directions API"""
+    if not OLA_API_KEY:
+        raise HTTPException(status_code=500, detail="Ola Maps API key not configured")
+
+    try:
+        url = (
+            f"https://api.olamaps.io/routing/v1/directions"
+            f"?origin={req.origin_lat},{req.origin_lng}"
+            f"&destination={req.dest_lat},{req.dest_lng}"
+            f"&api_key={OLA_API_KEY}"
+        )
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(url)
+
+        if response.status_code != 200:
+            logger.error(f"Ola Maps Directions API error: {response.status_code} {response.text}")
+            raise HTTPException(status_code=502, detail="Failed to calculate distance")
+
+        data = response.json()
+        routes = data.get("routes", [])
+        if not routes:
+            raise HTTPException(status_code=404, detail="No route found between these locations")
+
+        # Distance in meters → km, duration in seconds → minutes
+        leg = routes[0].get("legs", [{}])[0]
+        distance_km = round(leg.get("distance", 0) / 1000, 1)
+        duration_min = round(leg.get("duration", 0) / 60)
+
+        return {
+            "distance_km": distance_km,
+            "duration_min": duration_min,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Distance estimation error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to estimate distance")
 
 
 class PorterPriceRequest(BaseModel):
