@@ -79,15 +79,16 @@ async def create_address(
                 detail="Mobile number must be exactly 10 digits"
             )
         
-        # Check if this is the first address for the user
-        user_addresses_count = await db.count_documents("user_addresses", {
-            "user_id": current_user.id
-        })
-        is_default = user_addresses_count == 0  # First address becomes default
-        
+        # Unset previous default and make the new address the default
+        await db.update_many(
+            "user_addresses",
+            {"user_id": current_user.id, "is_default": True},
+            {"$set": {"is_default": False}}
+        )
+
         address_doc = address_data.dict()
         address_doc["user_id"] = current_user.id
-        address_doc["is_default"] = is_default
+        address_doc["is_default"] = True
         
         # ✅ If coordinates are not provided or are (0, 0), geocode the address automatically
         lat = address_data.latitude
