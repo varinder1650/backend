@@ -127,6 +127,9 @@ async def get_assigned_orders_for_delivery(
                 summary["porter"] = {
                     "pickup": f'{s.get("pickup_address", {}).get("street")}, {s.get("pickup_address", {}).get("city")}',
                     "drop": f'{s.get("delivery_address", {}).get("street")}, {s.get("delivery_address", {}).get("city")}',
+                    "recipient_name": s.get("recipient_name"),
+                    "phone": s.get("phone"),
+                    "distance": s.get("estimated_distance"),
                 }
                 break
 
@@ -220,6 +223,7 @@ async def get_delivery_order_details(
             "phone": order.get("delivery_address", {}).get("mobile_number") or user.get("phone"),
         },
         "delivery_address": order.get("delivery_address"),
+        "porter": None,
         "items": [],
     }
     # Add items (minimal)
@@ -245,7 +249,17 @@ async def get_delivery_order_details(
                 "type": "porter",
                 "pickup": s["pickup_address"],
                 "drop": s["delivery_address"],
+                "recipient_name": s.get("recipient_name"),
+                "phone": s.get("phone"),
+                "distance": s.get("estimated_distance"),
             })
+            response["porter"] = {
+                "pickup": f'{s.get("pickup_address", {}).get("street")}, {s.get("pickup_address", {}).get("city")}',
+                "drop": f'{s.get("delivery_address", {}).get("street")}, {s.get("delivery_address", {}).get("city")}',
+                "recipient_name": s.get("recipient_name"),
+                "phone": s.get("phone"),
+                "distance": s.get("estimated_distance"),
+            }
         if item["type"] == "printout":
             s = item["service_data"]
             response["items"].append({

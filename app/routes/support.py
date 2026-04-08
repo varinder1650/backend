@@ -73,7 +73,7 @@ async def get_user_tickets(
         tickets = await db.find_many(
             "support_tickets",
             {"user_id": current_user.id},
-            sort=[("created_at", -1)]
+            sort=[("updated_at", -1)]
         )
         
         fixed_tickets = [fix_mongo_types(ticket) for ticket in tickets]
@@ -654,7 +654,7 @@ async def get_user_support_tickets(
         tickets = await db.find_many(
             "support_tickets",
             {"user_id": current_user.id},
-            sort=[("created_at", -1)]
+            sort=[("updated_at", -1)]
         )
         
         # Enhance tickets with message counts and latest message info
