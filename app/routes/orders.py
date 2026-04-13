@@ -280,6 +280,7 @@ async def confirm_order(
                         "dimensions": service_data.get("dimensions"),
                         "weight_category": weight_category_int,
                         "phone": service_data.get("phone", ""),
+                        "recipient_name": service_data.get("recipient_name", ""),
                         "estimated_distance": service_data.get("estimated_distance", 0),
                         "estimated_cost": item["price"],
                         "notes": service_data.get("notes", ""),
