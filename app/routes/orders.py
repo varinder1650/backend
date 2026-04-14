@@ -11,7 +11,7 @@ from app.routes.notifications import create_notification
 from app.utils.auth import current_active_user, get_current_user
 from app.utils.order_item_generation import validatePorterItems, validateProductsItems, validatePrintItems
 from app.utils.order_verification import generate_order_signature, verify_order_signature
-from app.utils.verify_pricing import calculateDeliveryFee, calculateDiscount
+from app.utils.verify_pricing import calculateAppFee, calculateDeliveryFee, calculateDiscount
 from db.db_manager import DatabaseManager, get_database
 from schema.order import ConfirmOrderRequest, DeliveryAddress, DraftOrderRequest, DraftOrderResponse, OrderCreate, OrderResponse, OrderResponseEnhanced, OrderRating
 from schema.user import UserinDB
@@ -24,6 +24,54 @@ id_generator = get_id_generator()
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+@router.post("/estimate")
+async def estimate_order(
+    draft_data: DraftOrderRequest,
+    current_user: UserinDB = Depends(current_active_user),
+    db: DatabaseManager = Depends(get_database)
+):
+    """Lightweight pricing estimate — no draft created, no signature."""
+    try:
+        subtotal = 0
+        porter_price = 0
+
+        for item in draft_data.items:
+            if item['type'] == "product":
+                _, item_price = await validateProductsItems(item, db)
+                subtotal += item_price
+            elif item['type'] == "porter":
+                _, item_price = await validatePorterItems(item, db)
+                porter_price += item_price
+            elif item['type'] == "printout":
+                _, item_price = await validatePrintItems(item, db)
+                subtotal += item_price
+
+        subtotal += porter_price
+
+        has_porter_only = all(item['type'] == 'porter' for item in draft_data.items)
+        delivery_fee = 0 if has_porter_only else await calculateDeliveryFee(db, subtotal)
+
+        discount = 0
+        if draft_data.promo_code:
+            discount = await calculateDiscount(db, draft_data.promo_code, subtotal)
+
+        app_fee = await calculateAppFee(db, subtotal)
+        total = round(subtotal + delivery_fee + app_fee + draft_data.tip_amount - discount, 2)
+
+        return {
+            "subtotal": round(subtotal, 2),
+            "delivery_fee": round(delivery_fee, 2),
+            "app_fee": round(app_fee, 2),
+            "tip_amount": round(draft_data.tip_amount, 2),
+            "discount": round(discount, 2),
+            "total_amount": total,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Estimate order error: {e}")
+        raise HTTPException(500, "Failed to estimate order")
 
 @router.post("/draft", response_model=DraftOrderResponse)
 async def create_draft_order(
@@ -54,20 +102,22 @@ async def create_draft_order(
                 validated_items.append(validated_item)
                 subtotal += item_price
         
-        logger.info(f"Calculated subtotal: {subtotal}")
+        # Include porter/service prices in subtotal so frontend and backend agree
+        subtotal += porterPrice
+
+        logger.info(f"Calculated subtotal: {subtotal} (includes porter: {porterPrice})")
 
         has_porter_only = all(item['type'] == 'porter' for item in draft_data.items)
         deliveryFee = 0 if has_porter_only else await calculateDeliveryFee(db, subtotal)
-        
+
         # Apply promo code if provided
         discount = 0
         if draft_data.promo_code:
             discount = await calculateDiscount(db, draft_data.promo_code, subtotal)
 
-        appFee = 5
+        appFee = await calculateAppFee(db, subtotal)
         # Calculate total
-        total_amount = subtotal + porterPrice + deliveryFee + appFee + draft_data.tip_amount - discount
-        total_amount = round(total_amount, 2)
+        total_amount = round(subtotal + deliveryFee + appFee + draft_data.tip_amount - discount, 2)
         
         # Generate draft order ID
         draft_order_id = f"DRAFT_{current_user.id}_{int(datetime.now().timestamp())}"
@@ -214,15 +264,14 @@ async def confirm_order(
         # If prices changed, recalculate total and re-sign
         if price_changed:
             new_subtotal = sum(i["price"] * i["quantity"] for i in product_items)
-            # Recalculate non-product subtotals (printout items)
+            # Include non-product subtotals (printout + porter items)
             for item in draft_order["items"]:
                 if item["type"] == "printout":
                     new_subtotal += item["price"]
-            porter_total = sum(
-                i["price"] for i in draft_order["items"] if i["type"] == "porter"
-            )
+                elif item["type"] == "porter":
+                    new_subtotal += item["price"]
             new_total = (
-                new_subtotal + porter_total
+                new_subtotal
                 + draft_order["delivery_fee"]
                 + draft_order["app_fee"]
                 + draft_order["tip_amount"]
