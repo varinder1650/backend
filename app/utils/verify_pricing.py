@@ -58,6 +58,20 @@ async def calculate_printout_price_backend(service_data: dict, db) -> float:
 
     return round(pages * copies * price_per_page, 2)
 
+async def calculateAppFee(db, subtotal):
+    pricing = await getPricing(db)
+
+    if not pricing:
+        return 5
+
+    app_fee_config = pricing.get("appFee", {})
+    fee_type = app_fee_config.get("type", "fixed")
+    value = app_fee_config.get("value", 5)
+
+    if fee_type == "percentage":
+        return round(subtotal * value / 100, 2)
+    return round(value, 2)
+
 async def calculateDeliveryFee(db, subtotal):
     pricing = await getPricing(db)
     
