@@ -231,16 +231,20 @@ async def get_delivery_order_details(
         if item["type"] == "product":
             product = await db.find_one("products",{'id':item["product"]})
             if product:
+                brand = product.get("brand", {})
+                brand_name = brand.get("name") if isinstance(brand, dict) else None
                 response["items"].append({
                     "type": "product",
                     "name": product.get("name"),
                     "quantity": item.get("quantity"),
+                    "warehouse_name": brand_name,
                 })
             else:
                 response["items"].append({
                     "type": "product",
                     "name": "Not Available",
                     "quantity": item.get("quantity"),
+                    "warehouse_name": None,
                 })
 
         if item["type"] == "porter":
