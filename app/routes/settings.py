@@ -1,11 +1,34 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
 import logging
 import os
 import httpx
+import cloudinary
+import cloudinary.uploader
 from db.db_manager import DatabaseManager, get_database
+from app.utils.auth import current_active_user
 from app.utils.verify_pricing import getPricing
+from schema.user import UserinDB
+
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+)
+
+MAX_PRINTOUT_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+ALLOWED_DOCUMENT_TYPES = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+ALLOWED_IMAGE_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -160,3 +183,51 @@ async def get_public_settings(db: DatabaseManager = Depends(get_database)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get app settings"
         )
+
+
+@router.post("/upload-printout-file")
+async def upload_printout_file(
+    file: UploadFile = File(...),
+    current_user: UserinDB = Depends(current_active_user),
+):
+    """Upload a document or image for the printout service. Max file size: 10 MB."""
+    allowed_types = ALLOWED_DOCUMENT_TYPES | ALLOWED_IMAGE_TYPES
+    content_type = file.content_type or ""
+
+    if content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type '{content_type}'. Allowed: PDF, DOC, DOCX, JPEG, PNG, WEBP.",
+        )
+
+    contents = await file.read()
+
+    if len(contents) > MAX_PRINTOUT_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File exceeds the 10 MB size limit.",
+        )
+
+    is_photo = content_type in ALLOWED_IMAGE_TYPES
+    folder = "smartbag/printouts/photos" if is_photo else "smartbag/printouts/documents"
+    resource_type = "image" if is_photo else "raw"
+
+    try:
+        result = cloudinary.uploader.upload(
+            contents,
+            folder=folder,
+            resource_type=resource_type,
+            use_filename=True,
+            unique_filename=True,
+        )
+    except Exception as e:
+        logger.error(f"Cloudinary upload error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="File upload failed. Please try again.",
+        )
+
+    return {
+        "url": result.get("secure_url"),
+        "type": "photo" if is_photo else "document",
+    }
