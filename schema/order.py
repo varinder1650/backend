@@ -22,6 +22,7 @@ class ProductOrderItem(BaseModel):
     product: str
     quantity: int = Field(gt=0)
     price: float = Field(gt=0)
+    user_custom_image: Optional[str] = None
 
 class PrintServiceData(BaseModel):
     print_type: Optional[str] = "document"
@@ -73,6 +74,7 @@ class OrderItemResponse(BaseModel):
     product: str
     quantity: int
     price: float
+    user_custom_image: Optional[str] = None
 
 class OrderItemEnhancedResponse(BaseModel):
     product: str
@@ -80,6 +82,7 @@ class OrderItemEnhancedResponse(BaseModel):
     price: float
     product_name: Optional[str] = None  # Add product name field
     product_image: Optional[List] = None  # Add product images field
+    user_custom_image: Optional[str] = None
 
 class StatusChange(BaseModel):
     status: str

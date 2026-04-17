@@ -295,7 +295,8 @@ async def confirm_order(
                     "type": "product",
                     "product": product["id"],
                     "quantity": item["quantity"],
-                    "price": item["price"]
+                    "price": item["price"],
+                    "user_custom_image": item.get("user_custom_image")
                 })
 
             elif item["type"] == "printout":
