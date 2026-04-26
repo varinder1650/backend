@@ -71,17 +71,19 @@ class PorterOrderItem(BaseModel):
     service_data: PorterServiceData
 
 class OrderItemResponse(BaseModel):
+    type: str = "product"
     product: str
     quantity: int
     price: float
     user_custom_image: Optional[str] = None
 
 class OrderItemEnhancedResponse(BaseModel):
+    type: str = "product"
     product: str
     quantity: int
     price: float
-    product_name: Optional[str] = None  # Add product name field
-    product_image: Optional[List] = None  # Add product images field
+    product_name: Optional[str] = None
+    product_image: Optional[List] = None
     user_custom_image: Optional[str] = None
 
 class StatusChange(BaseModel):
