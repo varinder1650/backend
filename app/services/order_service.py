@@ -48,6 +48,7 @@ class OrderService:
                     "product": item.product,
                     "quantity": item.quantity,
                     "price": item.price,
+                    "user_custom_image": item.user_custom_image,
                 })
             elif item.type == "porter":
                 service_data_dict = item.service_data.dict() if hasattr(item.service_data, 'dict') else item.service_data.model_dump()
