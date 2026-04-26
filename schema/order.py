@@ -183,7 +183,7 @@ class OrderRating(BaseModel):
     order_id: str
 
 class DraftOrderRequest(BaseModel):
-    items: list
+    items: List[dict] = Field(..., min_length=1)
     delivery_address: DeliveryAddress
     tip_amount: float = 0
     promo_code: Optional[str] = None
