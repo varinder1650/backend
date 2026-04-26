@@ -1,5 +1,5 @@
 from typing import List, Literal, Optional, Union
-from pydantic import BaseModel, Field,ConfigDict
+from pydantic import AnyHttpUrl, BaseModel, Field, ConfigDict
 from datetime import datetime
 from bson import ObjectId
 from schema.products import ProductResponse
@@ -22,7 +22,7 @@ class ProductOrderItem(BaseModel):
     product: str
     quantity: int = Field(gt=0)
     price: float = Field(gt=0)
-    user_custom_image: Optional[str] = None
+    user_custom_image: Optional[AnyHttpUrl] = None
 
 class PrintServiceData(BaseModel):
     print_type: Optional[str] = "document"
