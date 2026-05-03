@@ -4,7 +4,7 @@ from app.routes import (
     categories, products, orders, auth, cart, brands,
     settings as settings_route, address, support, delivery,
     coupons, shop_status, notifications, porter, metrics, payment,
-    chat_ws
+    chat_ws, marketing
 )
 from datetime import datetime
 import os
@@ -42,7 +42,8 @@ def create_customer_app() -> FastAPI:
     app.include_router(porter.router, prefix="/porter", tags=["Porter"])
     app.include_router(payment.router, prefix="/payment", tags=["Payment"])
     app.include_router(chat_ws.router, tags=["Chat"])
-    
+    app.include_router(marketing.router, prefix="/marketing", tags=["Marketing"])
+
     @app.get("/")
     async def root():
         return {
