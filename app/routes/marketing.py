@@ -17,7 +17,9 @@ async def get_active_banners(db: DatabaseManager = Depends(get_database)):
     """Return all active marketing banners sorted by order (public endpoint)"""
     try:
         redis = get_redis()
-        cached = await redis.get(CACHE_KEY, use_l1=True)
+        # use_l1=False: skip in-memory cache — admin-backend can only invalidate Redis (L2),
+        # not the main backend's in-process memory. L2-only ensures invalidation works instantly.
+        cached = await redis.get(CACHE_KEY, use_l1=False)
         if cached:
             logger.info("⚡ Marketing banners cache HIT")
             return cached
@@ -33,7 +35,7 @@ async def get_active_banners(db: DatabaseManager = Depends(get_database)):
             fixed = fix_mongo_types(b)
             result.append(fixed)
 
-        await redis.set(CACHE_KEY, result, CACHE_TTL, use_l1=True)
+        await redis.set(CACHE_KEY, result, CACHE_TTL, use_l1=False)
         logger.info("💾 Marketing banners cached")
         return result
 
