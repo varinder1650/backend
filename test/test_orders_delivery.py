@@ -196,8 +196,43 @@ class TestOrders:
     async def test_get_active_order_none(self, client: AsyncClient, auth_headers):
         """Test getting active order when none exists"""
         response = await client.get("/orders/active", headers=auth_headers)
-        
+
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_user_custom_image_persists_to_db(self, client: AsyncClient, auth_headers, test_db, test_user, test_product):
+        """user_custom_image must survive the full API → service → MongoDB round trip"""
+        custom_image_url = "https://example.com/custom-design.jpg"
+
+        order_data = {
+            "items": [{
+                "type": "product",
+                "product": test_product["id"],
+                "quantity": 1,
+                "price": test_product["price"],
+                "user_custom_image": custom_image_url
+            }],
+            "delivery_address": {
+                "street": "123 Test St",
+                "city": "Test City",
+                "state": "Test State",
+                "pincode": "560073",
+                "mobile_number": "+1234567890"
+            },
+            "total_amount": test_product["price"],
+            "payment_method": "cod"
+        }
+
+        response = await client.post("/orders/", headers=auth_headers, json=order_data)
+        assert response.status_code == 200
+
+        # Verify field reached MongoDB — not just the API response
+        order = await test_db.orders.find_one({"user": test_user["id"]})
+        assert order is not None, "Order not found in DB"
+
+        product_items = [i for i in order.get("items", []) if i.get("type") == "product"]
+        assert len(product_items) == 1
+        assert product_items[0].get("user_custom_image") == custom_image_url
 
 class TestDelivery:
     """Test delivery partner endpoints"""

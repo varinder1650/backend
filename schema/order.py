@@ -1,5 +1,5 @@
 from typing import List, Literal, Optional, Union
-from pydantic import BaseModel, Field,ConfigDict
+from pydantic import AnyHttpUrl, BaseModel, Field, ConfigDict
 from datetime import datetime
 from bson import ObjectId
 from schema.products import ProductResponse
@@ -22,6 +22,7 @@ class ProductOrderItem(BaseModel):
     product: str
     quantity: int = Field(gt=0)
     price: float = Field(gt=0)
+    user_custom_image: Optional[AnyHttpUrl] = None
 
 class PrintServiceData(BaseModel):
     print_type: Optional[str] = "document"
@@ -70,16 +71,20 @@ class PorterOrderItem(BaseModel):
     service_data: PorterServiceData
 
 class OrderItemResponse(BaseModel):
+    type: str = "product"
     product: str
     quantity: int
     price: float
+    user_custom_image: Optional[str] = None
 
 class OrderItemEnhancedResponse(BaseModel):
+    type: str = "product"
     product: str
     quantity: int
     price: float
-    product_name: Optional[str] = None  # Add product name field
-    product_image: Optional[List] = None  # Add product images field
+    product_name: Optional[str] = None
+    product_image: Optional[List] = None
+    user_custom_image: Optional[str] = None
 
 class StatusChange(BaseModel):
     status: str
@@ -180,7 +185,7 @@ class OrderRating(BaseModel):
     order_id: str
 
 class DraftOrderRequest(BaseModel):
-    items: list
+    items: List[dict] = Field(..., min_length=1)
     delivery_address: DeliveryAddress
     tip_amount: float = 0
     promo_code: Optional[str] = None

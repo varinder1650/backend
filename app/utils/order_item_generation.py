@@ -17,7 +17,8 @@ async def validateProductsItems(item: dict, db):
         "product_id": item['product_id'],
         "quantity": item['quantity'],
         "price": product["selling_price"],
-        "subtotal": item_total
+        "subtotal": item_total,
+        "user_custom_image": item.get("user_custom_image")
     }
     
     return validated_item, item_total
